@@ -1,0 +1,12 @@
+[package]
+name = "latex-verify"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = "1"
+latex-model = { path = "../latex-model" }
+latex-project = { path = "../latex-project" }
+
+[dev-dependencies]
+tempfile = "3"

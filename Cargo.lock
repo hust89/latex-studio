@@ -458,6 +458,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "latex-correct"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "latex-model",
+ "latex-project",
+ "latex-verify",
+ "serde",
+ "tempfile",
+]
+
+[[package]]
 name = "latex-engine-system"
 version = "0.1.0"
 dependencies = [
@@ -524,6 +536,16 @@ dependencies = [
  "sha2",
  "tempfile",
  "zip",
+]
+
+[[package]]
+name = "latex-verify"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "latex-model",
+ "latex-project",
+ "tempfile",
 ]
 
 [[package]]

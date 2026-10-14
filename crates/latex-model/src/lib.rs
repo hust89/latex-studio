@@ -21,16 +21,14 @@ pub enum DiagnosticKind {
     UnresolvedReference,
     UnresolvedCitation,
     MissingAsset,
+    DuplicateLabel,
+    UnusedLabel,
     Bibliography,
     CompilationFailure,
     UnclosedEnvironment,
     Other,
 }
 
-/// The furthest stage the build reached. For a successful build this is
-/// always `Done`. For a failed build it is the last stage we observed
-/// before failure. Used by the UI to say "Running BibTeX" rather than
-/// showing an anonymous spinner.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 pub enum BuildPhase {
     Started,
