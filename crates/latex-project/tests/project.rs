@@ -27,7 +27,7 @@ fn fixture() -> tempfile::TempDir {
     write(
         &root.join("chapters/one.tex"),
         r#"\chapter{One}
-\input{../shared/macros}
+\input{shared/macros}
 Text with a percent sign \% not a comment.
 "#,
     );
@@ -35,7 +35,7 @@ Text with a percent sign \% not a comment.
     write(
         &root.join("chapters/two.tex"),
         r#"\chapter{Two}
-\input{../shared/macros}
+\input{shared/macros}
 "#,
     );
 

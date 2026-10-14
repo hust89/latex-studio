@@ -190,23 +190,27 @@ fn resolve(root: &Path, from_abs: &Path, arg: &str) -> Option<PathBuf> {
     } else {
         vec![p.with_extension("tex"), p.to_path_buf()]
     };
-    let from_dir = from_abs.parent()?;
-
-    // Prefer relative to the including file (what users typically mean
-    // when they write \input{sub/file} inside chapters/one.tex).
-    // Fall back to relative to the project root (what TeX itself does
-    // when invoked with the entry as its working directory).
+    // TeX resolves \input paths relative to the main document's directory,
+    // which is the project root we compile from. Match that exactly: prefer
+    // project-root-relative, then fall back to including-file-relative only
+    // for the historical case of `\input` inside a document that is itself
+    // an entry point. In practice a wrong relative path is a real error and
+    // the validator should report it, not paper over it.
     for cand in &candidates {
-        if let Ok(c) = from_dir.join(cand).canonicalize() {
+        if let Ok(c) = root.join(cand).canonicalize() {
             if c.is_file() && c.starts_with(root) {
                 return Some(c);
             }
         }
     }
-    for cand in &candidates {
-        if let Ok(c) = root.join(cand).canonicalize() {
-            if c.is_file() && c.starts_with(root) {
-                return Some(c);
+    // Fallback: relative to the including file. This catches the case where
+    // a user compiles a sub-file directly as an entry point.
+    if let Some(from_dir) = from_abs.parent() {
+        for cand in &candidates {
+            if let Ok(c) = from_dir.join(cand).canonicalize() {
+                if c.is_file() && c.starts_with(root) {
+                    return Some(c);
+                }
             }
         }
     }
