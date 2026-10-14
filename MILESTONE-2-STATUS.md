@@ -71,3 +71,25 @@ expected. Likely causes to investigate in M3:
    retrying online. Check the Rust logs during a compile.
 
 M3 will add a "measure and report" step before any optimisation.
+
+## Build latency — first measurements (2026-10-14)
+
+Corpus: multifile-book (chapters one+two, shared macros, .bib file).
+Command: FFI smoke test with LATEX_TECTONIC_NETWORK=offline.
+
+- Cold (first run after rm -rf):   ~3.5 s wall
+- Warm:                             1.15 s wall, success
+- Inside the engine:                 see "duration_ms" field
+
+The 1.15 s warm figure includes three BibTeX passes and one TeX rerun,
+all orchestrated by Tectonic internally. The engine is not the source of
+perceived app slowness; that investigation moves to the Flutter side in
+M3 (compare flutter debug vs --release).
+
+## Discovery: Tectonic handles BibTeX internally
+
+Tectonic 0.17 detects .bib dependencies and runs BibTeX as needed. The
+"bibliography passes" requirement in the brief is therefore substantially
+provided by the engine, not something the product must orchestrate.
+Milestone 3 work reduces to: surface the engine choice, expose the .bib
+files in the project model, and report the BibTeX/rerun phases in the UI.
