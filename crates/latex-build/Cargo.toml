@@ -1,0 +1,13 @@
+[package]
+name = "latex-build"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = "1"
+latex-model = { path = "../latex-model" }
+latex-engine-tectonic = { path = "../latex-engine-tectonic" }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["rt", "rt-multi-thread", "macros"] }
+tempfile = "3"

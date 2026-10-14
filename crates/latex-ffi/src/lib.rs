@@ -1,0 +1,94 @@
+use std::ffi::{CStr, CString};
+use std::os::raw::c_char;
+use std::panic::{catch_unwind, AssertUnwindSafe};
+use std::path::{Path, PathBuf};
+
+use latex_build::{BuildRequest, Builder};
+use latex_engine_tectonic::TectonicEngine;
+
+/// Compile `entry` with the project rooted at `project_root`, writing
+/// artefacts under `out_parent/<build_id>/`.
+///
+/// Returns a heap-allocated, NUL-terminated JSON string. On success the JSON
+/// matches `latex_model::BuildResult`; on any failure it is
+/// `{"error":"..."}`. The caller must free the string with
+/// `latex_free_string`.
+#[no_mangle]
+pub extern "C" fn latex_compile(
+    entry: *const c_char,
+    project_root: *const c_char,
+    out_parent: *const c_char,
+) -> *mut c_char {
+    let payload = catch_unwind(AssertUnwindSafe(|| {
+        // SAFETY: caller must supply valid NUL-terminated pointers; we check
+        // for null before dereferencing.
+        if entry.is_null() || project_root.is_null() || out_parent.is_null() {
+            return json_error("null pointer argument");
+        }
+        let entry = unsafe { CStr::from_ptr(entry) }.to_string_lossy().into_owned();
+        let project_root = unsafe { CStr::from_ptr(project_root) }.to_string_lossy().into_owned();
+        let out_parent = unsafe { CStr::from_ptr(out_parent) }.to_string_lossy().into_owned();
+
+        if entry.is_empty() || project_root.is_empty() || out_parent.is_empty() {
+            return json_error("empty string argument");
+        }
+
+        let entry_path = Path::new(&entry);
+        if !entry_path.is_file() {
+            return json_error(&format!("entry is not a file: {entry}"));
+        }
+        let root_path = Path::new(&project_root);
+        if !root_path.is_dir() {
+            return json_error(&format!("project_root is not a directory: {project_root}"));
+        }
+        // Canonicalize so the engine receives stable absolute paths.
+        let (entry_c, root_c) = match (entry_path.canonicalize(), root_path.canonicalize()) {
+            (Ok(a), Ok(b)) => (a, b),
+            (Err(e), _) | (_, Err(e)) => return json_error(&format!("canonicalize: {e}")),
+        };
+        // Entry must live under the project root.
+        if !entry_c.starts_with(&root_c) {
+            return json_error("entry is not inside project_root");
+        }
+        let out_path = PathBuf::from(&out_parent);
+        if let Err(e) = std::fs::create_dir_all(&out_path) {
+            return json_error(&format!("cannot create out_parent: {e}"));
+        }
+
+        let rt = match tokio::runtime::Runtime::new() {
+            Ok(rt) => rt,
+            Err(e) => return json_error(&format!("runtime: {e}")),
+        };
+
+        rt.block_on(async {
+            let builder = Builder::new(TectonicEngine::default());
+            let req = BuildRequest {
+                entry: entry_c,
+                project_root: root_c,
+                out_parent: out_path,
+            };
+            match builder.build(&req).await {
+                Ok(r) => serde_json::to_string(&r)
+                    .unwrap_or_else(|e| json_error(&format!("serialize: {e}"))),
+                Err(e) => json_error(&format!("{e:#}")),
+            }
+        })
+    }))
+    .unwrap_or_else(|_| json_error("panic in latex_compile"));
+
+    // A CString cannot contain NUL; our payload is JSON, guaranteed NUL-free.
+    let c = CString::new(payload)
+        .unwrap_or_else(|_| CString::new("{\"error\":\"nul byte in result\"}").unwrap());
+    c.into_raw()
+}
+
+#[no_mangle]
+pub extern "C" fn latex_free_string(p: *mut c_char) {
+    if p.is_null() { return; }
+    // SAFETY: pointer produced by CString::into_raw above.
+    unsafe { drop(CString::from_raw(p)); }
+}
+
+fn json_error(msg: &str) -> String {
+    serde_json::json!({ "error": msg }).to_string()
+}

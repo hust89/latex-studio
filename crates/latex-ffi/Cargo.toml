@@ -1,0 +1,16 @@
+[package]
+name = "latex-ffi"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "staticlib", "rlib"]
+
+[dependencies]
+serde_json = "1"
+tokio = { version = "1", features = ["rt-multi-thread"] }
+latex-build = { path = "../latex-build" }
+latex-engine-tectonic = { path = "../latex-engine-tectonic" }
+
+[dev-dependencies]
+tempfile = "3"
