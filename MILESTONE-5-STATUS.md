@@ -18,3 +18,21 @@ Deliberately not delivered in this step:
 - Proof verification: We explicitly do not claim arbitrary mathematical proof verification.
 - Remaining M5.1 checks: Equation and theorem reference prefix vocabulary extensions, dimensional consistency for units (`siunitx`, literal units), and specific contradiction rules (next steps in M5.1).
 - M5.2 (formal verification adapter), M5.3 (benchmarks and performance), M5.4 (cross-platform hardening).
+
+## M5.2 — Lean 4 formal verification adapter (CLOSED, 2026-10-14)
+
+Delivered:
+- latex-formal crate with FormalSystem trait and LeanEngine.
+- FormalResult: Verified | NotVerified | Unavailable. Never conflated.
+- FFI: latex_formal_check(preamble, statement, project_dir),
+  latex_formal_available().
+- Lean 4 writes diagnostics to stdout; both streams are captured.
+- 6 crate tests, 6 FFI tests. Lean is present on this machine, so the
+  positive and negative paths ran rather than skipped.
+
+Not delivered:
+- No UI. The Flutter shell does not yet offer a Check-with-Lean action,
+  and does not display the tri-state. Deferred.
+
+## M5.3 — performance work (not started)
+## M5.4 — cross-platform hardening (not started)
