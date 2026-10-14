@@ -7,10 +7,12 @@ edition = "2021"
 crate-type = ["cdylib", "staticlib", "rlib"]
 
 [dependencies]
+serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["rt-multi-thread"] }
 latex-build = { path = "../latex-build" }
 latex-engine-tectonic = { path = "../latex-engine-tectonic" }
+latex-project = { path = "../latex-project" }
 
 [dev-dependencies]
 tempfile = "3"

@@ -1,5 +1,5 @@
 name: latex_studio
-description: Cross-platform LaTeX creation and correction system — Milestone 1 shell.
+description: Cross-platform LaTeX creation and correction system.
 publish_to: 'none'
 version: 0.1.0+1
 
@@ -12,6 +12,9 @@ dependencies:
   ffi: ^2.2.0
   file_picker: ^8.3.7
   pdfrx: ^2.6.1
+  flutter_code_editor: ^0.3.0
+  flutter_highlight: ^0.7.0
+  highlight: ^0.7.0
 
 flutter:
   uses-material-design: true

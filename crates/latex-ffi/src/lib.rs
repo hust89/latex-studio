@@ -92,3 +92,89 @@ pub extern "C" fn latex_free_string(p: *mut c_char) {
 fn json_error(msg: &str) -> String {
     serde_json::json!({ "error": msg }).to_string()
 }
+
+// ---------- project model ---------------------------------------------------
+
+#[derive(serde::Serialize)]
+struct ProjectIndexJson {
+    files: Vec<FileJson>,
+    entry: Option<String>,
+}
+
+#[derive(serde::Serialize)]
+struct FileJson {
+    path: String,
+    kind: &'static str,
+}
+
+/// Scan a project root and return its file index as JSON:
+///
+/// ```json
+/// {
+///   "files": [
+///     {"path": "main.tex", "kind": "Source"},
+///     {"path": "refs.bib", "kind": "Bibliography"},
+///     {"path": "figures/plot.pdf", "kind": "Asset"}
+///   ],
+///   "entry": "main.tex"
+/// }
+/// ```
+///
+/// Errors are returned as `{"error": "..."}`. Caller frees with
+/// `latex_free_string`.
+#[no_mangle]
+pub extern "C" fn latex_project_index(project_root: *const c_char) -> *mut c_char {
+    let payload = catch_unwind(AssertUnwindSafe(|| {
+        if project_root.is_null() {
+            return json_error("null pointer argument");
+        }
+        let root = unsafe { CStr::from_ptr(project_root) }
+            .to_string_lossy()
+            .into_owned();
+        if root.is_empty() {
+            return json_error("empty string argument");
+        }
+
+        let project = match latex_project::Project::open(&root) {
+            Ok(p) => p,
+            Err(e) => return json_error(&format!("{e:#}")),
+        };
+        let index = match project.index() {
+            Ok(i) => i,
+            Err(e) => return json_error(&format!("{e:#}")),
+        };
+
+        let files: Vec<FileJson> = index
+            .files
+            .iter()
+            .map(|f| FileJson {
+                path: f.path.to_string_lossy().into_owned(),
+                kind: kind_name(f.kind),
+            })
+            .collect();
+
+        let entry = project
+            .entry(&index)
+            .map(|p| p.to_string_lossy().into_owned());
+
+        let out = ProjectIndexJson { files, entry };
+        serde_json::to_string(&out)
+            .unwrap_or_else(|e| json_error(&format!("serialize: {e}")))
+    }))
+    .unwrap_or_else(|_| json_error("panic in latex_project_index"));
+
+    let c = CString::new(payload)
+        .unwrap_or_else(|_| CString::new("{\"error\":\"nul byte in result\"}").unwrap());
+    c.into_raw()
+}
+
+fn kind_name(k: latex_project::FileKind) -> &'static str {
+    use latex_project::FileKind::*;
+    match k {
+        Source => "Source",
+        Bibliography => "Bibliography",
+        Style => "Style",
+        Asset => "Asset",
+        Other => "Other",
+    }
+}
