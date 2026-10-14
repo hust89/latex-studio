@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:ffi';
 import 'dart:io';
@@ -18,6 +19,12 @@ typedef _CompileC = Pointer<Utf8> Function(Pointer<Utf8>, Pointer<Utf8>, Pointer
 typedef _CompileDart = Pointer<Utf8> Function(Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>);
 typedef _IndexC = Pointer<Utf8> Function(Pointer<Utf8>);
 typedef _IndexDart = Pointer<Utf8> Function(Pointer<Utf8>);
+typedef _SaveC = Pointer<Utf8> Function(Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>);
+typedef _SaveDart = Pointer<Utf8> Function(Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>);
+typedef _ListC = Pointer<Utf8> Function(Pointer<Utf8>);
+typedef _ListDart = Pointer<Utf8> Function(Pointer<Utf8>);
+typedef _ReadC = Pointer<Utf8> Function(Pointer<Utf8>, Pointer<Utf8>);
+typedef _ReadDart = Pointer<Utf8> Function(Pointer<Utf8>, Pointer<Utf8>);
 typedef _FreeC = Void Function(Pointer<Utf8>);
 typedef _FreeDart = void Function(Pointer<Utf8>);
 
@@ -25,11 +32,24 @@ class LatexNative {
   final DynamicLibrary _lib;
   late final _CompileDart _compile;
   late final _IndexDart _index;
+  late final _SaveDart _saveAtomic;
+  late final _SaveDart _autosaveWrite;
+  late final _ListDart _autosaveList;
+  late final _ReadDart _autosaveRead;
+  late final _ReadDart _autosaveClear;
   late final _FreeDart _free;
 
   LatexNative._(this._lib) {
     _compile = _lib.lookupFunction<_CompileC, _CompileDart>('latex_compile');
     _index = _lib.lookupFunction<_IndexC, _IndexDart>('latex_project_index');
+    _saveAtomic =
+        _lib.lookupFunction<_SaveC, _SaveDart>('latex_save_atomic');
+    _autosaveWrite =
+        _lib.lookupFunction<_SaveC, _SaveDart>('latex_autosave_write');
+    _autosaveList = _lib.lookupFunction<_ListC, _ListDart>('latex_autosave_list');
+    _autosaveRead = _lib.lookupFunction<_ReadC, _ReadDart>('latex_autosave_read');
+    _autosaveClear =
+        _lib.lookupFunction<_ReadC, _ReadDart>('latex_autosave_clear');
     _free = _lib.lookupFunction<_FreeC, _FreeDart>('latex_free_string');
   }
 
@@ -74,12 +94,58 @@ class LatexNative {
       malloc.free(r);
     }
   }
+
+  Map<String, dynamic> _three(
+      String root, String rel, String content, _SaveDart fn) {
+    final a = root.toNativeUtf8();
+    final b = rel.toNativeUtf8();
+    final c = content.toNativeUtf8();
+    try {
+      return _decodeAndFree(fn(a, b, c));
+    } finally {
+      malloc.free(a);
+      malloc.free(b);
+      malloc.free(c);
+    }
+  }
+
+  Map<String, dynamic> saveAtomic(String root, String rel, String content) =>
+      _three(root, rel, content, _saveAtomic);
+
+  Map<String, dynamic> autosaveWrite(String root, String rel, String content) =>
+      _three(root, rel, content, _autosaveWrite);
+
+  Map<String, dynamic> _two(String root, String rel, _ReadDart fn) {
+    final a = root.toNativeUtf8();
+    final b = rel.toNativeUtf8();
+    try {
+      return _decodeAndFree(fn(a, b));
+    } finally {
+      malloc.free(a);
+      malloc.free(b);
+    }
+  }
+
+  Map<String, dynamic> autosaveRead(String root, String rel) =>
+      _two(root, rel, _autosaveRead);
+
+  Map<String, dynamic> autosaveClear(String root, String rel) =>
+      _two(root, rel, _autosaveClear);
+
+  Map<String, dynamic> autosaveList(String root) {
+    final r = root.toNativeUtf8();
+    try {
+      return _decodeAndFree(_autosaveList(r));
+    } finally {
+      malloc.free(r);
+    }
+  }
 }
 
-// Worker-isolate entry points. DynamicLibrary must be opened inside the
-// worker, so we do not capture a LatexNative instance across isolates.
+// Worker-isolate entry points for the slow operations.
 
-Future<Map<String, dynamic>> compileOffUi(String entry, String root, String out) {
+Future<Map<String, dynamic>> compileOffUi(
+    String entry, String root, String out) {
   return Isolate.run(() {
     final n = LatexNative.open();
     return n.compile(entry, root, out);
@@ -93,7 +159,7 @@ Future<Map<String, dynamic>> indexOffUi(String root) {
   });
 }
 
-// ---------- Project model on the Dart side ----------------------------------
+// ---------- Model ----------------------------------------------------------
 
 class ProjectFile {
   final String path;
@@ -105,6 +171,13 @@ class ProjectIndex {
   final List<ProjectFile> files;
   final String? entry;
   ProjectIndex(this.files, this.entry);
+}
+
+class Recoverable {
+  final String path;
+  final int autosaveMtimeMs;
+  final int originalMtimeMs;
+  Recoverable(this.path, this.autosaveMtimeMs, this.originalMtimeMs);
 }
 
 // ---------- App --------------------------------------------------------------
@@ -143,7 +216,12 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
+  static const Duration _autosaveDebounce = Duration(seconds: 2);
+
   final TextEditingController _pathController = TextEditingController();
+
+  LatexNative? _native;
+  String? _nativeError;
 
   String? _projectRoot;
   ProjectIndex? _projectIndex;
@@ -154,9 +232,21 @@ class _HomePageState extends State<HomePage> {
   bool _dirty = false;
   Map<String, dynamic>? _result;
   bool _busy = false;
+  Timer? _autosaveTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    try {
+      _native = LatexNative.open();
+    } catch (e) {
+      _nativeError = 'native library not found: $e';
+    }
+  }
 
   @override
   void dispose() {
+    _autosaveTimer?.cancel();
     _pathController.dispose();
     _editor?.dispose();
     super.dispose();
@@ -181,7 +271,8 @@ class _HomePageState extends State<HomePage> {
 
   Future<void> _loadRoot(String root) async {
     if (!Directory(root).existsSync()) {
-      setState(() => _result = <String, dynamic>{'error': 'not a directory: $root'});
+      setState(() =>
+          _result = <String, dynamic>{'error': 'not a directory: $root'});
       return;
     }
 
@@ -215,7 +306,6 @@ class _HomePageState extends State<HomePage> {
               f['kind'] as String,
             ))
         .toList();
-
     final entry = idx['entry'] as String?;
 
     _editor?.dispose();
@@ -233,9 +323,101 @@ class _HomePageState extends State<HomePage> {
       _dirty = false;
     });
 
+    await _offerRecovery(root);
+
     if (entry != null) {
       await _openProjectFile(entry);
     }
+  }
+
+  // ---------- Recovery -------------------------------------------------------
+
+  Future<void> _offerRecovery(String root) async {
+    final native = _native;
+    if (native == null) return;
+
+    List<Recoverable> recoverables;
+    try {
+      final res = native.autosaveList(root);
+      if (res['error'] != null) return;
+      final rawList = (res['recoverable'] as List?) ?? const [];
+      recoverables = rawList
+          .map((r) => Recoverable(
+                (r as Map)['path'] as String,
+                (r['autosave_mtime_ms'] as num).toInt(),
+                (r['original_mtime_ms'] as num).toInt(),
+              ))
+          .toList();
+    } catch (_) {
+      return;
+    }
+    if (recoverables.isEmpty || !mounted) return;
+
+    final choice = await showDialog<String>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Unsaved work found'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'The following files have autosaves newer than what is on '
+                'disk. Recover them or discard the autosaves?',
+              ),
+              const SizedBox(height: 12),
+              for (final r in recoverables)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 2),
+                  child: Text(
+                    '${r.path}  (autosaved ${_fmt(r.autosaveMtimeMs)})',
+                    style:
+                        const TextStyle(fontFamily: 'monospace', fontSize: 12),
+                  ),
+                ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop('discard'),
+            child: const Text('Discard'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop('recover'),
+            child: const Text('Recover'),
+          ),
+        ],
+      ),
+    );
+
+    if (choice == 'recover') {
+      for (final r in recoverables) {
+        try {
+          final res = native.autosaveRead(root, r.path);
+          if (res['error'] != null) continue;
+          final content = res['content'] as String? ?? '';
+          native.saveAtomic(root, r.path, content);
+        } catch (_) {
+          // A single recovery failure does not abort the rest.
+        }
+      }
+    } else {
+      for (final r in recoverables) {
+        try {
+          native.autosaveClear(root, r.path);
+        } catch (_) {}
+      }
+    }
+  }
+
+  static String _fmt(int ms) {
+    final d = DateTime.fromMillisecondsSinceEpoch(ms);
+    final hh = d.hour.toString().padLeft(2, '0');
+    final mm = d.minute.toString().padLeft(2, '0');
+    return '$hh:$mm';
   }
 
   // ---------- Editing --------------------------------------------------------
@@ -243,15 +425,18 @@ class _HomePageState extends State<HomePage> {
   Future<void> _openProjectFile(String rel) async {
     final root = _projectRoot;
     if (root == null) return;
+
+    // Flush the current file first so switching never loses work.
+    if (_dirty) {
+      await _save();
+    }
+
     final abs = '$root/$rel';
     final f = File(abs);
     if (!f.existsSync()) return;
 
     final content = await f.readAsString();
-    final controller = CodeController(
-      text: content,
-      language: hl_tex.tex,
-    );
+    final controller = CodeController(text: content, language: hl_tex.tex);
     controller.addListener(_onEditorChanged);
 
     _editor?.dispose();
@@ -267,13 +452,49 @@ class _HomePageState extends State<HomePage> {
     if (!_dirty && mounted) {
       setState(() => _dirty = true);
     }
+    _autosaveTimer?.cancel();
+    _autosaveTimer = Timer(_autosaveDebounce, _autosaveNow);
+  }
+
+  void _autosaveNow() {
+    final native = _native;
+    final root = _projectRoot;
+    final rel = _openFile;
+    final editor = _editor;
+    if (native == null || root == null || rel == null || editor == null) return;
+    if (!_dirty) return;
+    try {
+      native.autosaveWrite(root, rel, editor.text);
+    } catch (_) {
+      // Autosave failures are silent; the user still has Ctrl+S.
+    }
   }
 
   Future<void> _save() async {
-    final abs = _openFileAbs;
+    final native = _native;
+    final root = _projectRoot;
+    final rel = _openFile;
     final editor = _editor;
-    if (abs == null || editor == null) return;
-    await File(abs).writeAsString(editor.text);
+    if (native == null || root == null || rel == null || editor == null) return;
+
+    _autosaveTimer?.cancel();
+    try {
+      final res = native.saveAtomic(root, rel, editor.text);
+      if (res['error'] != null) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Save failed: ${res['error']}')),
+        );
+        return;
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Save failed: $e')),
+      );
+      return;
+    }
+
     if (!mounted) return;
     setState(() => _dirty = false);
   }
@@ -285,7 +506,6 @@ class _HomePageState extends State<HomePage> {
     final root = _projectRoot;
     if (entry == null || root == null) return;
 
-    // Save the open file first so the compiler sees the latest edit.
     if (_dirty) {
       await _save();
     }
@@ -317,7 +537,6 @@ class _HomePageState extends State<HomePage> {
       return const Center(child: Text('No project loaded'));
     }
 
-    // Group by directory, keep files sorted within each.
     final byDir = <String, List<ProjectFile>>{};
     for (final f in idx.files) {
       final slash = f.path.lastIndexOf('/');
@@ -504,13 +723,9 @@ class _HomePageState extends State<HomePage> {
       length: 2,
       child: Column(
         children: [
-          const TabBar(
-            tabs: [Tab(text: 'Editor'), Tab(text: 'PDF')],
-          ),
+          const TabBar(tabs: [Tab(text: 'Editor'), Tab(text: 'PDF')]),
           Expanded(
-            child: TabBarView(
-              children: [_editorPane(), _pdfPane()],
-            ),
+            child: TabBarView(children: [_editorPane(), _pdfPane()]),
           ),
         ],
       ),
@@ -583,11 +798,11 @@ class _HomePageState extends State<HomePage> {
       final sep = Platform.pathSeparator;
       final parts = _projectRoot!.split(sep).where((s) => s.isNotEmpty).toList();
       final name = parts.isEmpty ? _projectRoot : parts.last;
-      buf.write(' — $name');
+      buf.write(' \u2014 $name');
       if (_openFile != null) {
         buf.write(' / ${_openFile!.split('/').last}');
       }
-      if (_dirty) buf.write(' •');
+      if (_dirty) buf.write(' \u2022');
     }
     return buf.toString();
   }
@@ -646,6 +861,11 @@ class _HomePageState extends State<HomePage> {
             ),
             body: Column(
               children: [
+                if (_nativeError != null)
+                  MaterialBanner(
+                    content: Text(_nativeError!),
+                    actions: const [SizedBox.shrink()],
+                  ),
                 Padding(
                   padding: const EdgeInsets.fromLTRB(8, 8, 8, 4),
                   child: Row(
