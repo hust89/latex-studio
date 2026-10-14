@@ -497,6 +497,7 @@ dependencies = [
  "latex-build",
  "latex-correct",
  "latex-engine-tectonic",
+ "latex-formal",
  "latex-model",
  "latex-project",
  "latex-publish",
@@ -506,6 +507,16 @@ dependencies = [
  "tempfile",
  "tokio",
  "zip",
+]
+
+[[package]]
+name = "latex-formal"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "serde",
+ "tokio",
 ]
 
 [[package]]

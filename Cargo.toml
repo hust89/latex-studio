@@ -8,6 +8,7 @@ members = [
   "crates/latex-build",
   "crates/latex-verify",
   "crates/latex-correct",
+  "crates/latex-formal",
   "crates/latex-publish",
   "crates/latex-ffi",
 ]

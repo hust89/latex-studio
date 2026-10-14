@@ -13,12 +13,14 @@ use std::path::PathBuf;
 
 mod compile;
 mod engines;
+mod formal;
 mod project;
 mod publish;
 mod verify;
 
 pub use compile::latex_compile;
 pub use engines::latex_engines_list;
+pub use formal::{latex_formal_available, latex_formal_check};
 pub use project::{
     latex_autosave_clear, latex_autosave_list, latex_autosave_read, latex_autosave_write,
     latex_project_index, latex_save_atomic, latex_template_create, latex_templates_list,
@@ -52,7 +54,6 @@ pub(crate) fn read_cstr(p: *const c_char) -> Option<String> {
     Some(unsafe { CStr::from_ptr(p) }.to_string_lossy().into_owned())
 }
 
-/// Validate a project-root / relative-path pair.
 pub(crate) fn path_from_args(
     project_root: &str,
     rel_path: &str,

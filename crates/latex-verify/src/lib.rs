@@ -6,7 +6,8 @@
 //!   - `\cite` with no matching bibliography entry
 //!   - `\includegraphics` pointing at a missing file
 //!   - `\label` never referenced (info)
-//!   - notation consistency: declared commands never used (info)
+//!   - notation: commands declared but never used (info)
+//!   - notation: commands used but never declared (warning)
 //!
 //! Not a TeX parser. Per-line scanning of the constructs above, with
 //! comments stripped. Multi-line command arguments are not handled; the
@@ -74,9 +75,6 @@ pub fn strip_comment(line: &str) -> &str {
 
 /// Scan one line for any of the tracked commands, returning
 /// `(command_name, argument_string)` pairs.
-///
-/// Handles `\includegraphics[opts]{path}` by skipping an optional `[...]`
-/// block. For cite commands, the caller splits the argument by comma.
 pub fn scan_line(line: &str) -> Vec<(String, String)> {
     let mut out = Vec::new();
     let bytes = line.as_bytes();
@@ -97,16 +95,13 @@ pub fn scan_line(line: &str) -> Vec<(String, String)> {
             if &bytes[i + 1..after] != cb {
                 continue;
             }
-            // Word boundary: reject `\labels` when looking for `\label`.
             if after < bytes.len() && bytes[after].is_ascii_alphabetic() {
                 continue;
             }
-            // Skip whitespace.
             let mut j = after;
             while j < bytes.len() && (bytes[j] == b' ' || bytes[j] == b'\t') {
                 j += 1;
             }
-            // Skip optional `[...]` (used by \includegraphics and some cite forms).
             if j < bytes.len() && bytes[j] == b'[' {
                 while j < bytes.len() && bytes[j] != b']' {
                     j += 1;
@@ -118,7 +113,6 @@ pub fn scan_line(line: &str) -> Vec<(String, String)> {
                     j += 1;
                 }
             }
-            // Expect `{`.
             if j >= bytes.len() || bytes[j] != b'{' {
                 continue;
             }
@@ -353,7 +347,7 @@ pub fn verify(root: &Path, index: &FileIndex, entry: Option<&Path>) -> Result<Ve
         }
     }
 
-    // 4f. Notation consistency: symbols declared but never used.
+    // 4f. Notation consistency: declared-but-unused and used-but-undeclared.
     let math_diags = math::check_notation(root, index)?;
     out.extend(math_diags);
 
@@ -386,7 +380,6 @@ fn asset_resolves(known: &HashSet<String>, arg: &str) -> bool {
     if known.contains(&normalized) {
         return true;
     }
-    // Try common image extensions for the extensionless form.
     let p = Path::new(&normalized);
     if p.extension().is_none() {
         for ext in IMAGE_EXTS {

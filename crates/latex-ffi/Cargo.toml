@@ -13,6 +13,7 @@ tokio = { version = "1", features = ["rt-multi-thread"] }
 latex-build = { path = "../latex-build" }
 latex-correct = { path = "../latex-correct" }
 latex-engine-tectonic = { path = "../latex-engine-tectonic" }
+latex-formal = { path = "../latex-formal" }
 latex-model = { path = "../latex-model" }
 latex-project = { path = "../latex-project" }
 latex-publish = { path = "../latex-publish" }
