@@ -31,3 +31,26 @@ Not delivered (carried to M2.3 / M2.4):
 
 ## M2.3 — autosave and recovery (not started)
 ## M2.4 — templates (not started)
+
+## M2.3 — autosave and recovery (CLOSED, 2026-10-14)
+
+Delivered:
+- Atomic writes (temp + fsync + rename); no temp files leak on success.
+- Autosave mirror at .latex-studio-build/autosave/<rel>, cleared on real save.
+- Debounced autosave, 2 s idle.
+- Save-on-file-switch and save-on-compile.
+- Recovery dialog on project load listing each recoverable file with its
+  autosave time; Recover / Discard.
+- Path sanitization: .. and absolute paths rejected.
+- Rust: 5 unit tests + 5 FFI tests.
+
+Verification: manual smoke run on Linux desktop. Individual edge cases
+not individually exercised; see M4 test plan when formal verification of
+the correction workflow is added.
+
+Not delivered:
+- Versioned history (multiple restore points). Single rolling autosave
+  per file. Recommended for v1.5, not v1.0.
+- No automated Flutter tests.
+
+## M2.4 — templates (not started)
