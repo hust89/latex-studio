@@ -21,3 +21,28 @@ Not verified on this host:
 ## M3.2 — bibliography UI (not started)
 ## M3.3 — publishing (not started)
 ## M3.4 — speed (closed early, see M2 notes)
+
+## M3.3 — publishing (CLOSED, 2026-10-14)
+
+Delivered:
+- latex-publish crate.
+- Portable zip archive: project files at original paths, output.pdf at
+  root when a successful build exists, MANIFEST.json with engine, time,
+  entry, and per-file SHA-256 hashes.
+- Build artefacts excluded.
+- latex_publish_archive FFI.
+- Flutter: publish button with save dialog and snackbar.
+- 4 crate tests, 3 FFI tests.
+
+Not delivered:
+- Dedicated "Save PDF as..." action.
+- Byte-reproducible archive. Manifest carries a wall-clock timestamp.
+
+## Milestone 3 — CLOSED
+
+- M3.1  multi-engine compilation
+- M3.2  build phase
+- M3.3  publishing
+- M3.4  speed (closed early)
+
+Total tests added in M3: 15.
