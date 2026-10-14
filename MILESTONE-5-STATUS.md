@@ -36,3 +36,18 @@ Not delivered:
 
 ## M5.3 — performance work (not started)
 ## M5.4 — cross-platform hardening (not started)
+
+## M5.4 (part 1) — Android cross-compilation (VERIFIED, 2026-10-14)
+
+Verified:
+- cargo ndk builds liblatex_ffi.so for all four Android ABIs.
+- 17 FFI exports present in each .so.
+- No C-library build surprises.
+- Environment: NDK 25.2.9519653, cargo-ndk 4.1.2, rustup Android
+  targets for all four ABIs already installed.
+
+Not yet done:
+- The .so has never been loaded by an Android process. No APK built.
+- Tectonic has not been bundled for Android. Decision pending.
+
+## M5.3 — performance work (not started)
