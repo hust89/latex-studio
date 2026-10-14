@@ -26,6 +26,7 @@ pub enum DiagnosticKind {
     Bibliography,
     CompilationFailure,
     UnclosedEnvironment,
+    UnusedCommand,
     Other,
 }
 

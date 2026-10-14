@@ -6,6 +6,7 @@
 //!   - `\cite` with no matching bibliography entry
 //!   - `\includegraphics` pointing at a missing file
 //!   - `\label` never referenced (info)
+//!   - notation consistency: declared commands never used (info)
 //!
 //! Not a TeX parser. Per-line scanning of the constructs above, with
 //! comments stripped. Multi-line command arguments are not handled; the
@@ -17,6 +18,8 @@ use latex_model::{Diagnostic, DiagnosticKind, Severity, SourceLocation};
 use latex_project::{FileIndex, Project};
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
+
+pub mod math;
 
 #[derive(Debug, Clone)]
 pub struct Located {
@@ -349,6 +352,10 @@ pub fn verify(root: &Path, index: &FileIndex, entry: Option<&Path>) -> Result<Ve
             });
         }
     }
+
+    // 4f. Notation consistency: symbols declared but never used.
+    let math_diags = math::check_notation(root, index)?;
+    out.extend(math_diags);
 
     // Stable order: by file, then line, then severity.
     out.sort_by(|a, b| {
