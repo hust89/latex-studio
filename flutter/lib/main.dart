@@ -1,10 +1,6 @@
 import 'dart:async';
-import 'dart:convert';
-import 'dart:ffi';
 import 'dart:io';
-import 'dart:isolate';
 
-import 'package:ffi/ffi.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -13,219 +9,8 @@ import 'package:flutter_highlight/themes/atom-one-dark.dart';
 import 'package:highlight/languages/tex.dart' as hl_tex;
 import 'package:pdfrx/pdfrx.dart';
 
-// ---------- FFI --------------------------------------------------------------
-
-typedef _CompileC = Pointer<Utf8> Function(Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>);
-typedef _CompileDart = Pointer<Utf8> Function(Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>);
-typedef _IndexC = Pointer<Utf8> Function(Pointer<Utf8>);
-typedef _IndexDart = Pointer<Utf8> Function(Pointer<Utf8>);
-typedef _SaveC = Pointer<Utf8> Function(Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>);
-typedef _SaveDart = Pointer<Utf8> Function(Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>);
-typedef _ListC = Pointer<Utf8> Function(Pointer<Utf8>);
-typedef _ListDart = Pointer<Utf8> Function(Pointer<Utf8>);
-typedef _ReadC = Pointer<Utf8> Function(Pointer<Utf8>, Pointer<Utf8>);
-typedef _ReadDart = Pointer<Utf8> Function(Pointer<Utf8>, Pointer<Utf8>);
-typedef _PublishC = Pointer<Utf8> Function(Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>);
-typedef _PublishDart = Pointer<Utf8> Function(Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>);
-typedef _EnginesListC = Pointer<Utf8> Function();
-typedef _EnginesListDart = Pointer<Utf8> Function();
-typedef _TplListC = Pointer<Utf8> Function();
-typedef _TplListDart = Pointer<Utf8> Function();
-typedef _TplCreateC = Pointer<Utf8> Function(Pointer<Utf8>, Pointer<Utf8>);
-typedef _TplCreateDart = Pointer<Utf8> Function(Pointer<Utf8>, Pointer<Utf8>);
-typedef _FreeC = Void Function(Pointer<Utf8>);
-typedef _FreeDart = void Function(Pointer<Utf8>);
-
-class LatexNative {
-  final DynamicLibrary _lib;
-  late final _CompileDart _compile;
-  late final _IndexDart _index;
-  late final _SaveDart _saveAtomic;
-  late final _SaveDart _autosaveWrite;
-  late final _ListDart _autosaveList;
-  late final _ReadDart _autosaveRead;
-  late final _ReadDart _autosaveClear;
-  late final _EnginesListDart _enginesList;
-  late final _TplListDart _tplList;
-  late final _TplCreateDart _tplCreate;
-  late final _PublishDart _publishArchive;
-  late final _FreeDart _free;
-
-  LatexNative._(this._lib) {
-    _compile = _lib.lookupFunction<_CompileC, _CompileDart>('latex_compile');
-    _index = _lib.lookupFunction<_IndexC, _IndexDart>('latex_project_index');
-    _saveAtomic = _lib.lookupFunction<_SaveC, _SaveDart>('latex_save_atomic');
-    _autosaveWrite = _lib.lookupFunction<_SaveC, _SaveDart>('latex_autosave_write');
-    _autosaveList = _lib.lookupFunction<_ListC, _ListDart>('latex_autosave_list');
-    _autosaveRead = _lib.lookupFunction<_ReadC, _ReadDart>('latex_autosave_read');
-    _autosaveClear = _lib.lookupFunction<_ReadC, _ReadDart>('latex_autosave_clear');
-    _enginesList = _lib.lookupFunction<_EnginesListC, _EnginesListDart>('latex_engines_list');
-    _tplList = _lib.lookupFunction<_TplListC, _TplListDart>('latex_templates_list');
-    _tplCreate = _lib.lookupFunction<_TplCreateC, _TplCreateDart>('latex_template_create');
-    _publishArchive = _lib
-        .lookupFunction<_PublishC, _PublishDart>('latex_publish_archive');
-    _free = _lib.lookupFunction<_FreeC, _FreeDart>('latex_free_string');
-  }
-
-  static LatexNative open() {
-    final DynamicLibrary lib;
-    if (Platform.isAndroid || Platform.isLinux) {
-      lib = DynamicLibrary.open('liblatex_ffi.so');
-    } else if (Platform.isMacOS) {
-      lib = DynamicLibrary.open('liblatex_ffi.dylib');
-    } else if (Platform.isWindows) {
-      lib = DynamicLibrary.open('latex_ffi.dll');
-    } else {
-      throw UnsupportedError('Unsupported platform');
-    }
-    return LatexNative._(lib);
-  }
-
-  Map<String, dynamic> _decodeAndFree(Pointer<Utf8> raw) {
-    final s = raw.toDartString();
-    _free(raw);
-    return jsonDecode(s) as Map<String, dynamic>;
-  }
-
-  Map<String, dynamic> compile(String engine, String entry, String root, String out) {
-    final g = engine.toNativeUtf8();
-    final e = entry.toNativeUtf8();
-    final r = root.toNativeUtf8();
-    final o = out.toNativeUtf8();
-    try {
-      return _decodeAndFree(_compile(g, e, r, o));
-    } finally {
-      malloc.free(g);
-      malloc.free(e);
-      malloc.free(r);
-      malloc.free(o);
-    }
-  }
-
-  Map<String, dynamic> index(String root) {
-    final r = root.toNativeUtf8();
-    try {
-      return _decodeAndFree(_index(r));
-    } finally {
-      malloc.free(r);
-    }
-  }
-
-  Map<String, dynamic> _three(String root, String rel, String content, _SaveDart fn) {
-    final a = root.toNativeUtf8();
-    final b = rel.toNativeUtf8();
-    final c = content.toNativeUtf8();
-    try {
-      return _decodeAndFree(fn(a, b, c));
-    } finally {
-      malloc.free(a);
-      malloc.free(b);
-      malloc.free(c);
-    }
-  }
-
-  Map<String, dynamic> saveAtomic(String root, String rel, String content) =>
-      _three(root, rel, content, _saveAtomic);
-
-  Map<String, dynamic> autosaveWrite(String root, String rel, String content) =>
-      _three(root, rel, content, _autosaveWrite);
-
-  Map<String, dynamic> _two(String root, String rel, _ReadDart fn) {
-    final a = root.toNativeUtf8();
-    final b = rel.toNativeUtf8();
-    try {
-      return _decodeAndFree(fn(a, b));
-    } finally {
-      malloc.free(a);
-      malloc.free(b);
-    }
-  }
-
-  Map<String, dynamic> autosaveRead(String root, String rel) =>
-      _two(root, rel, _autosaveRead);
-
-  Map<String, dynamic> autosaveClear(String root, String rel) =>
-      _two(root, rel, _autosaveClear);
-
-  Map<String, dynamic> autosaveList(String root) {
-    final r = root.toNativeUtf8();
-    try {
-      return _decodeAndFree(_autosaveList(r));
-    } finally {
-      malloc.free(r);
-    }
-  }
-
-  Map<String, dynamic> publishArchive(String root, String outZip, String engine) {
-    final a = root.toNativeUtf8();
-    final b = outZip.toNativeUtf8();
-    final c = engine.toNativeUtf8();
-    try {
-      return _decodeAndFree(_publishArchive(a, b, c));
-    } finally {
-      malloc.free(a);
-      malloc.free(b);
-      malloc.free(c);
-    }
-  }
-
-  Map<String, dynamic> enginesList() {
-    return _decodeAndFree(_enginesList());
-  }
-
-  Map<String, dynamic> templatesList() {
-    return _decodeAndFree(_tplList());
-  }
-
-  Map<String, dynamic> templateCreate(String name, String targetDir) {
-    final n = name.toNativeUtf8();
-    final t = targetDir.toNativeUtf8();
-    try {
-      return _decodeAndFree(_tplCreate(n, t));
-    } finally {
-      malloc.free(n);
-      malloc.free(t);
-    }
-  }
-}
-
-Future<Map<String, dynamic>> compileOffUi(
-    String engine, String entry, String root, String out) {
-  return Isolate.run(() {
-    final n = LatexNative.open();
-    return n.compile(engine, entry, root, out);
-  });
-}
-
-Future<Map<String, dynamic>> indexOffUi(String root) {
-  return Isolate.run(() {
-    final n = LatexNative.open();
-    return n.index(root);
-  });
-}
-
-// ---------- Model ----------------------------------------------------------
-
-class ProjectFile {
-  final String path;
-  final String kind;
-  ProjectFile(this.path, this.kind);
-}
-
-class ProjectIndex {
-  final List<ProjectFile> files;
-  final String? entry;
-  ProjectIndex(this.files, this.entry);
-}
-
-class Recoverable {
-  final String path;
-  final int autosaveMtimeMs;
-  final int originalMtimeMs;
-  Recoverable(this.path, this.autosaveMtimeMs, this.originalMtimeMs);
-}
-
-// ---------- App --------------------------------------------------------------
+import 'models.dart';
+import 'native.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -317,6 +102,8 @@ class _HomePageState extends State<HomePage> {
     } catch (_) {}
   }
 
+  // ---------- project loading ------------------------------------------------
+
   Future<void> _pickProject() async {
     final dir = await FilePicker.platform.getDirectoryPath();
     if (dir == null) return;
@@ -393,6 +180,8 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
+  // ---------- new from template ---------------------------------------------
+
   Future<void> _newFromTemplate() async {
     final native = _native;
     if (native == null) return;
@@ -432,6 +221,8 @@ class _HomePageState extends State<HomePage> {
     final root = created['path'] as String? ?? result['path']!;
     await _loadRoot(root);
   }
+
+  // ---------- recovery -------------------------------------------------------
 
   Future<void> _offerRecovery(String root) async {
     final native = _native;
@@ -519,6 +310,8 @@ class _HomePageState extends State<HomePage> {
     return '$hh:$mm';
   }
 
+  // ---------- editing --------------------------------------------------------
+
   Future<void> _openProjectFile(String rel) async {
     final root = _projectRoot;
     if (root == null) return;
@@ -593,6 +386,8 @@ class _HomePageState extends State<HomePage> {
     setState(() => _dirty = false);
   }
 
+  // ---------- compile --------------------------------------------------------
+
   Future<void> _compile() async {
     final entry = _entry;
     final root = _projectRoot;
@@ -620,6 +415,8 @@ class _HomePageState extends State<HomePage> {
       _busy = false;
     });
   }
+
+  // ---------- publish --------------------------------------------------------
 
   Future<void> _publish() async {
     final native = _native;
@@ -656,6 +453,8 @@ class _HomePageState extends State<HomePage> {
       SnackBar(content: Text('Published $files files ($pdf) to $out')),
     );
   }
+
+  // ---------- file tree ------------------------------------------------------
 
   Widget _fileTree() {
     final idx = _projectIndex;
@@ -742,6 +541,8 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
+  // ---------- editor pane ----------------------------------------------------
+
   Widget _editorPane() {
     final editor = _editor;
     if (editor == null) {
@@ -770,6 +571,8 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
+  // ---------- pdf pane -------------------------------------------------------
+
   Widget _pdfPane() {
     final r = _result;
     if (r == null) return const Center(child: Text('No build yet'));
@@ -782,6 +585,8 @@ class _HomePageState extends State<HomePage> {
     }
     return PdfViewer.file(pdf);
   }
+
+  // ---------- diagnostics ---------------------------------------------------
 
   Widget _diagnosticsPane() {
     final r = _result;
@@ -835,6 +640,8 @@ class _HomePageState extends State<HomePage> {
       },
     );
   }
+
+  // ---------- layouts -------------------------------------------------------
 
   Widget _editorAndPdfTabs() {
     return DefaultTabController(
@@ -907,6 +714,8 @@ class _HomePageState extends State<HomePage> {
       ),
     );
   }
+
+  // ---------- app bar / build ------------------------------------------------
 
   String _windowTitle() {
     final buf = StringBuffer('LaTeX Studio');
