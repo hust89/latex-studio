@@ -387,3 +387,50 @@ pub extern "C" fn latex_template_create(
     .unwrap_or_else(|_| json_error("panic in latex_template_create"));
     cstring_or_error(payload)
 }
+
+// ---------- publishing ------------------------------------------------------
+
+/// Create a portable source archive of `project_root` at `out_zip`.
+/// Returns a PublishReport as JSON on success, `{"error":"..."}` otherwise.
+#[no_mangle]
+pub extern "C" fn latex_publish_archive(
+    project_root: *const c_char,
+    out_zip: *const c_char,
+    engine_id: *const c_char,
+) -> *mut c_char {
+    let payload = catch_unwind(AssertUnwindSafe(|| {
+        if project_root.is_null() || out_zip.is_null() || engine_id.is_null() {
+            return json_error("null pointer argument");
+        }
+        let root = unsafe { CStr::from_ptr(project_root) }
+            .to_string_lossy()
+            .into_owned();
+        let out = unsafe { CStr::from_ptr(out_zip) }
+            .to_string_lossy()
+            .into_owned();
+        let engine = unsafe { CStr::from_ptr(engine_id) }
+            .to_string_lossy()
+            .into_owned();
+        if root.is_empty() || out.is_empty() || engine.is_empty() {
+            return json_error("empty string argument");
+        }
+        let root_path = PathBuf::from(&root);
+        if !root_path.is_dir() {
+            return json_error(&format!("project_root is not a directory: {root}"));
+        }
+        let out_path = PathBuf::from(&out);
+
+        let opts = latex_publish::PublishOptions {
+            project_root: root_path,
+            out_zip: out_path,
+            engine_id: engine,
+        };
+        match latex_publish::create_archive(&opts) {
+            Ok(r) => serde_json::to_string(&r)
+                .unwrap_or_else(|e| json_error(&format!("serialize: {e}"))),
+            Err(e) => json_error(&format!("{e:#}")),
+        }
+    }))
+    .unwrap_or_else(|_| json_error("panic in latex_publish_archive"));
+    cstring_or_error(payload)
+}

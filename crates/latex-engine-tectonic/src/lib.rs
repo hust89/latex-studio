@@ -1,6 +1,9 @@
 use async_trait::async_trait;
 use anyhow::{Context, Result};
-use latex_model::{BuildResult, Diagnostic, DiagnosticKind, Severity, SourceLocation, Engine, EngineRequest};
+use latex_model::{
+    BuildPhase, BuildResult, Diagnostic, DiagnosticKind, Engine, EngineRequest, Severity,
+    SourceLocation,
+};
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -77,6 +80,7 @@ impl TectonicEngine {
 
         let pdf = find_pdf(&out_dir, &entry_abs);
         let success = output.status.success() && pdf.is_some();
+        let phase = detect_phase(&stdout, &stderr, success);
 
         Ok(BuildResult {
             success,
@@ -87,8 +91,36 @@ impl TectonicEngine {
             stdout,
             stderr,
             duration_ms: start.elapsed().as_millis(),
+            phase,
         })
     }
+}
+
+
+/// Determine the furthest build phase reached by scanning Tectonic's stdout
+/// and stderr. Tectonic announces each phase with a `note: ...` line.
+/// Later notes override earlier ones; a successful exit bumps to `Done`.
+pub fn detect_phase(stdout: &str, stderr: &str, success: bool) -> BuildPhase {
+    let mut phase = BuildPhase::Started;
+    let mut scan = |line: &str| {
+        let l = line.trim_start();
+        let l = l.strip_prefix("note: ").unwrap_or(l);
+        if l.starts_with("Running TeX") {
+            if phase == BuildPhase::Started || phase == BuildPhase::Rerun {
+                phase = BuildPhase::Compiling;
+            }
+        } else if l.starts_with("Running BibTeX") || l.starts_with("Running Biber") {
+            phase = BuildPhase::Bibliography;
+        } else if l.starts_with("Rerunning TeX") {
+            phase = BuildPhase::Rerun;
+        } else if l.starts_with("Running xdvipdfmx") {
+            phase = BuildPhase::Rendering;
+        }
+    };
+    for line in stdout.lines().chain(stderr.lines()) {
+        scan(line);
+    }
+    if success { BuildPhase::Done } else { phase }
 }
 
 fn read_adjacent_log(out_dir: &Path, entry: &Path) -> Option<String> {

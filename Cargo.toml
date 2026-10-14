@@ -6,5 +6,6 @@ members = [
   "crates/latex-engine-tectonic",
   "crates/latex-engine-system",
   "crates/latex-build",
+  "crates/latex-publish",
   "crates/latex-ffi",
 ]

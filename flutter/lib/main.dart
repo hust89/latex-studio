@@ -25,6 +25,8 @@ typedef _ListC = Pointer<Utf8> Function(Pointer<Utf8>);
 typedef _ListDart = Pointer<Utf8> Function(Pointer<Utf8>);
 typedef _ReadC = Pointer<Utf8> Function(Pointer<Utf8>, Pointer<Utf8>);
 typedef _ReadDart = Pointer<Utf8> Function(Pointer<Utf8>, Pointer<Utf8>);
+typedef _PublishC = Pointer<Utf8> Function(Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>);
+typedef _PublishDart = Pointer<Utf8> Function(Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>);
 typedef _EnginesListC = Pointer<Utf8> Function();
 typedef _EnginesListDart = Pointer<Utf8> Function();
 typedef _TplListC = Pointer<Utf8> Function();
@@ -46,6 +48,7 @@ class LatexNative {
   late final _EnginesListDart _enginesList;
   late final _TplListDart _tplList;
   late final _TplCreateDart _tplCreate;
+  late final _PublishDart _publishArchive;
   late final _FreeDart _free;
 
   LatexNative._(this._lib) {
@@ -59,6 +62,8 @@ class LatexNative {
     _enginesList = _lib.lookupFunction<_EnginesListC, _EnginesListDart>('latex_engines_list');
     _tplList = _lib.lookupFunction<_TplListC, _TplListDart>('latex_templates_list');
     _tplCreate = _lib.lookupFunction<_TplCreateC, _TplCreateDart>('latex_template_create');
+    _publishArchive = _lib
+        .lookupFunction<_PublishC, _PublishDart>('latex_publish_archive');
     _free = _lib.lookupFunction<_FreeC, _FreeDart>('latex_free_string');
   }
 
@@ -148,6 +153,19 @@ class LatexNative {
       return _decodeAndFree(_autosaveList(r));
     } finally {
       malloc.free(r);
+    }
+  }
+
+  Map<String, dynamic> publishArchive(String root, String outZip, String engine) {
+    final a = root.toNativeUtf8();
+    final b = outZip.toNativeUtf8();
+    final c = engine.toNativeUtf8();
+    try {
+      return _decodeAndFree(_publishArchive(a, b, c));
+    } finally {
+      malloc.free(a);
+      malloc.free(b);
+      malloc.free(c);
     }
   }
 
@@ -603,6 +621,42 @@ class _HomePageState extends State<HomePage> {
     });
   }
 
+  Future<void> _publish() async {
+    final native = _native;
+    final root = _projectRoot;
+    if (native == null || root == null) return;
+
+    final name = root.split(Platform.pathSeparator).last;
+    final suggested = '$name.zip';
+    final out = await FilePicker.platform.saveFile(
+      dialogTitle: 'Publish archive',
+      fileName: suggested,
+      type: FileType.custom,
+      allowedExtensions: ['zip'],
+    );
+    if (out == null) return;
+
+    Map<String, dynamic> r;
+    try {
+      r = native.publishArchive(root, out, _engineId);
+    } catch (e) {
+      r = <String, dynamic>{'error': 'publish failure: $e'};
+    }
+
+    if (!mounted) return;
+    if (r['error'] != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Publish failed: ${r['error']}')),
+      );
+      return;
+    }
+    final files = r['file_count'];
+    final pdf = r['pdf_included'] == true ? 'with PDF' : 'sources only';
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Published $files files ($pdf) to $out')),
+    );
+  }
+
   Widget _fileTree() {
     final idx = _projectIndex;
     if (idx == null) {
@@ -946,6 +1000,11 @@ class _HomePageState extends State<HomePage> {
                   onPressed: (_entry == null || _busy) ? null : _compile,
                   icon: const Icon(Icons.play_arrow),
                   tooltip: 'Compile',
+                ),
+                IconButton(
+                  onPressed: (_projectRoot == null || _busy) ? null : _publish,
+                  icon: const Icon(Icons.archive_outlined),
+                  tooltip: 'Publish archive',
                 ),
               ],
             ),

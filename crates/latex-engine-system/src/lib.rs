@@ -10,7 +10,8 @@
 use anyhow::{Context, Result};
 use async_trait::async_trait;
 use latex_model::{
-    BuildResult, Diagnostic, DiagnosticKind, Engine, EngineRequest, Severity, SourceLocation,
+    BuildPhase, BuildResult, Diagnostic, DiagnosticKind, Engine, EngineRequest, Severity,
+    SourceLocation,
 };
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
@@ -152,6 +153,7 @@ impl Engine for SystemEngine {
 
         let pdf = find_pdf(&out_dir, &entry_abs);
         let success = output.status.success() && pdf.is_some();
+        let phase = if success { BuildPhase::Done } else { BuildPhase::Failed };
 
         Ok(BuildResult {
             success,
@@ -162,6 +164,7 @@ impl Engine for SystemEngine {
             stdout,
             stderr,
             duration_ms: start.elapsed().as_millis(),
+            phase,
         })
     }
 }

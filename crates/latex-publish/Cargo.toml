@@ -1,0 +1,17 @@
+[package]
+name = "latex-publish"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = "1"
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
+hex = "0.4"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+zip = "2"
+latex-project = { path = "../latex-project" }
+
+[dev-dependencies]
+tempfile = "3"
