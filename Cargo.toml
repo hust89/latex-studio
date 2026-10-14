@@ -4,6 +4,7 @@ members = [
   "crates/latex-model",
   "crates/latex-project",
   "crates/latex-engine-tectonic",
+  "crates/latex-engine-system",
   "crates/latex-build",
   "crates/latex-ffi",
 ]

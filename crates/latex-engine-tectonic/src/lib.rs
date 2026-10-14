@@ -1,5 +1,6 @@
+use async_trait::async_trait;
 use anyhow::{Context, Result};
-use latex_model::{BuildResult, Diagnostic, DiagnosticKind, Severity, SourceLocation};
+use latex_model::{BuildResult, Diagnostic, DiagnosticKind, Severity, SourceLocation, Engine, EngineRequest};
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -30,7 +31,7 @@ impl TectonicEngine {
     /// `project_root` becomes the process working directory, so relative
     /// `\input`, `\includegraphics`, and `.bib` paths resolve the way the user
     /// expects.
-    pub async fn compile(
+    async fn compile_inner(
         &self,
         entry: &Path,
         project_root: &Path,
@@ -220,4 +221,27 @@ fn classify_warning(msg: &str) -> DiagnosticKind {
     if m.contains("citation") && m.contains("undefined")  { DiagnosticKind::UnresolvedCitation }
     else if m.contains("reference") && m.contains("undefined") { DiagnosticKind::UnresolvedReference }
     else                                                   { DiagnosticKind::Other }
+}
+
+
+#[async_trait]
+impl Engine for TectonicEngine {
+    fn id(&self) -> &'static str { "tectonic" }
+    fn display_name(&self) -> &'static str { "Tectonic" }
+
+    fn available(&self) -> bool {
+        std::process::Command::new(&self.binary)
+            .arg("--version")
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false)
+    }
+
+    fn notes(&self) -> Option<String> {
+        Some("single-binary, offline after first run".into())
+    }
+
+    async fn compile(&self, req: EngineRequest) -> anyhow::Result<BuildResult> {
+        self.compile_inner(&req.entry, &req.project_root, &req.out_parent).await
+    }
 }

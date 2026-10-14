@@ -5,9 +5,10 @@ edition = "2021"
 
 [dependencies]
 anyhow = "1"
+async-trait = "0.1"
 tokio = { version = "1", features = ["process", "time", "fs"] }
 latex-model = { path = "../latex-model" }
 
 [dev-dependencies]
-tokio = { version = "1", features = ["rt", "macros"] }
+tokio = { version = "1", features = ["rt", "rt-multi-thread", "macros"] }
 tempfile = "3"

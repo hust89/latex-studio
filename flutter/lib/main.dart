@@ -15,8 +15,8 @@ import 'package:pdfrx/pdfrx.dart';
 
 // ---------- FFI --------------------------------------------------------------
 
-typedef _CompileC = Pointer<Utf8> Function(Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>);
-typedef _CompileDart = Pointer<Utf8> Function(Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>);
+typedef _CompileC = Pointer<Utf8> Function(Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>);
+typedef _CompileDart = Pointer<Utf8> Function(Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>);
 typedef _IndexC = Pointer<Utf8> Function(Pointer<Utf8>);
 typedef _IndexDart = Pointer<Utf8> Function(Pointer<Utf8>);
 typedef _SaveC = Pointer<Utf8> Function(Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>);
@@ -25,11 +25,12 @@ typedef _ListC = Pointer<Utf8> Function(Pointer<Utf8>);
 typedef _ListDart = Pointer<Utf8> Function(Pointer<Utf8>);
 typedef _ReadC = Pointer<Utf8> Function(Pointer<Utf8>, Pointer<Utf8>);
 typedef _ReadDart = Pointer<Utf8> Function(Pointer<Utf8>, Pointer<Utf8>);
+typedef _EnginesListC = Pointer<Utf8> Function();
+typedef _EnginesListDart = Pointer<Utf8> Function();
 typedef _TplListC = Pointer<Utf8> Function();
 typedef _TplListDart = Pointer<Utf8> Function();
 typedef _TplCreateC = Pointer<Utf8> Function(Pointer<Utf8>, Pointer<Utf8>);
 typedef _TplCreateDart = Pointer<Utf8> Function(Pointer<Utf8>, Pointer<Utf8>);
-// latextemplates_list_marker
 typedef _FreeC = Void Function(Pointer<Utf8>);
 typedef _FreeDart = void Function(Pointer<Utf8>);
 
@@ -42,6 +43,7 @@ class LatexNative {
   late final _ListDart _autosaveList;
   late final _ReadDart _autosaveRead;
   late final _ReadDart _autosaveClear;
+  late final _EnginesListDart _enginesList;
   late final _TplListDart _tplList;
   late final _TplCreateDart _tplCreate;
   late final _FreeDart _free;
@@ -49,18 +51,14 @@ class LatexNative {
   LatexNative._(this._lib) {
     _compile = _lib.lookupFunction<_CompileC, _CompileDart>('latex_compile');
     _index = _lib.lookupFunction<_IndexC, _IndexDart>('latex_project_index');
-    _saveAtomic =
-        _lib.lookupFunction<_SaveC, _SaveDart>('latex_save_atomic');
-    _autosaveWrite =
-        _lib.lookupFunction<_SaveC, _SaveDart>('latex_autosave_write');
+    _saveAtomic = _lib.lookupFunction<_SaveC, _SaveDart>('latex_save_atomic');
+    _autosaveWrite = _lib.lookupFunction<_SaveC, _SaveDart>('latex_autosave_write');
     _autosaveList = _lib.lookupFunction<_ListC, _ListDart>('latex_autosave_list');
     _autosaveRead = _lib.lookupFunction<_ReadC, _ReadDart>('latex_autosave_read');
-    _autosaveClear =
-        _lib.lookupFunction<_ReadC, _ReadDart>('latex_autosave_clear');
-    _tplList =
-        _lib.lookupFunction<_TplListC, _TplListDart>('latex_templates_list');
-    _tplCreate = _lib
-        .lookupFunction<_TplCreateC, _TplCreateDart>('latex_template_create');
+    _autosaveClear = _lib.lookupFunction<_ReadC, _ReadDart>('latex_autosave_clear');
+    _enginesList = _lib.lookupFunction<_EnginesListC, _EnginesListDart>('latex_engines_list');
+    _tplList = _lib.lookupFunction<_TplListC, _TplListDart>('latex_templates_list');
+    _tplCreate = _lib.lookupFunction<_TplCreateC, _TplCreateDart>('latex_template_create');
     _free = _lib.lookupFunction<_FreeC, _FreeDart>('latex_free_string');
   }
 
@@ -84,13 +82,15 @@ class LatexNative {
     return jsonDecode(s) as Map<String, dynamic>;
   }
 
-  Map<String, dynamic> compile(String entry, String root, String out) {
+  Map<String, dynamic> compile(String engine, String entry, String root, String out) {
+    final g = engine.toNativeUtf8();
     final e = entry.toNativeUtf8();
     final r = root.toNativeUtf8();
     final o = out.toNativeUtf8();
     try {
-      return _decodeAndFree(_compile(e, r, o));
+      return _decodeAndFree(_compile(g, e, r, o));
     } finally {
+      malloc.free(g);
       malloc.free(e);
       malloc.free(r);
       malloc.free(o);
@@ -106,8 +106,7 @@ class LatexNative {
     }
   }
 
-  Map<String, dynamic> _three(
-      String root, String rel, String content, _SaveDart fn) {
+  Map<String, dynamic> _three(String root, String rel, String content, _SaveDart fn) {
     final a = root.toNativeUtf8();
     final b = rel.toNativeUtf8();
     final c = content.toNativeUtf8();
@@ -143,9 +142,21 @@ class LatexNative {
   Map<String, dynamic> autosaveClear(String root, String rel) =>
       _two(root, rel, _autosaveClear);
 
+  Map<String, dynamic> autosaveList(String root) {
+    final r = root.toNativeUtf8();
+    try {
+      return _decodeAndFree(_autosaveList(r));
+    } finally {
+      malloc.free(r);
+    }
+  }
+
+  Map<String, dynamic> enginesList() {
+    return _decodeAndFree(_enginesList());
+  }
+
   Map<String, dynamic> templatesList() {
-    final raw = _tplList();
-    return _decodeAndFree(raw);
+    return _decodeAndFree(_tplList());
   }
 
   Map<String, dynamic> templateCreate(String name, String targetDir) {
@@ -158,24 +169,13 @@ class LatexNative {
       malloc.free(t);
     }
   }
-
-  Map<String, dynamic> autosaveList(String root) {
-    final r = root.toNativeUtf8();
-    try {
-      return _decodeAndFree(_autosaveList(r));
-    } finally {
-      malloc.free(r);
-    }
-  }
 }
 
-// Worker-isolate entry points for the slow operations.
-
 Future<Map<String, dynamic>> compileOffUi(
-    String entry, String root, String out) {
+    String engine, String entry, String root, String out) {
   return Isolate.run(() {
     final n = LatexNative.open();
-    return n.compile(entry, root, out);
+    return n.compile(engine, entry, root, out);
   });
 }
 
@@ -260,12 +260,15 @@ class _HomePageState extends State<HomePage> {
   Map<String, dynamic>? _result;
   bool _busy = false;
   Timer? _autosaveTimer;
+  String _engineId = 'tectonic';
+  List<Map<String, dynamic>> _engines = const [];
 
   @override
   void initState() {
     super.initState();
     try {
       _native = LatexNative.open();
+      _refreshEngines();
     } catch (e) {
       _nativeError = 'native library not found: $e';
     }
@@ -279,7 +282,22 @@ class _HomePageState extends State<HomePage> {
     super.dispose();
   }
 
-  // ---------- Project loading ------------------------------------------------
+  void _refreshEngines() {
+    final native = _native;
+    if (native == null) return;
+    try {
+      final res = native.enginesList();
+      final list = (res['engines'] as List?) ?? const [];
+      final def = res['default'] as String?;
+      if (!mounted) return;
+      setState(() {
+        _engines = list.cast<Map<String, dynamic>>();
+        if (def != null && _engines.any((e) => e['id'] == def)) {
+          _engineId = def;
+        }
+      });
+    } catch (_) {}
+  }
 
   Future<void> _pickProject() async {
     final dir = await FilePicker.platform.getDirectoryPath();
@@ -357,8 +375,6 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
-  // ---------- New from template ---------------------------------------------
-
   Future<void> _newFromTemplate() async {
     final native = _native;
     if (native == null) return;
@@ -398,8 +414,6 @@ class _HomePageState extends State<HomePage> {
     final root = created['path'] as String? ?? result['path']!;
     await _loadRoot(root);
   }
-
-  // ---------- Recovery -------------------------------------------------------
 
   Future<void> _offerRecovery(String root) async {
     final native = _native;
@@ -469,9 +483,7 @@ class _HomePageState extends State<HomePage> {
           if (res['error'] != null) continue;
           final content = res['content'] as String? ?? '';
           native.saveAtomic(root, r.path, content);
-        } catch (_) {
-          // A single recovery failure does not abort the rest.
-        }
+        } catch (_) {}
       }
     } else {
       for (final r in recoverables) {
@@ -489,13 +501,10 @@ class _HomePageState extends State<HomePage> {
     return '$hh:$mm';
   }
 
-  // ---------- Editing --------------------------------------------------------
-
   Future<void> _openProjectFile(String rel) async {
     final root = _projectRoot;
     if (root == null) return;
 
-    // Flush the current file first so switching never loses work.
     if (_dirty) {
       await _save();
     }
@@ -534,9 +543,7 @@ class _HomePageState extends State<HomePage> {
     if (!_dirty) return;
     try {
       native.autosaveWrite(root, rel, editor.text);
-    } catch (_) {
-      // Autosave failures are silent; the user still has Ctrl+S.
-    }
+    } catch (_) {}
   }
 
   Future<void> _save() async {
@@ -568,8 +575,6 @@ class _HomePageState extends State<HomePage> {
     setState(() => _dirty = false);
   }
 
-  // ---------- Compile --------------------------------------------------------
-
   Future<void> _compile() async {
     final entry = _entry;
     final root = _projectRoot;
@@ -586,7 +591,7 @@ class _HomePageState extends State<HomePage> {
 
     Map<String, dynamic> r;
     try {
-      r = await compileOffUi('$root/$entry', root, outParent);
+      r = await compileOffUi(_engineId, '$root/$entry', root, outParent);
     } catch (e) {
       r = <String, dynamic>{'error': 'compile failure: $e'};
     }
@@ -597,8 +602,6 @@ class _HomePageState extends State<HomePage> {
       _busy = false;
     });
   }
-
-  // ---------- File tree ------------------------------------------------------
 
   Widget _fileTree() {
     final idx = _projectIndex;
@@ -685,8 +688,6 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  // ---------- Editor pane ----------------------------------------------------
-
   Widget _editorPane() {
     final editor = _editor;
     if (editor == null) {
@@ -715,8 +716,6 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  // ---------- PDF pane -------------------------------------------------------
-
   Widget _pdfPane() {
     final r = _result;
     if (r == null) return const Center(child: Text('No build yet'));
@@ -729,8 +728,6 @@ class _HomePageState extends State<HomePage> {
     }
     return PdfViewer.file(pdf);
   }
-
-  // ---------- Diagnostics ---------------------------------------------------
 
   Widget _diagnosticsPane() {
     final r = _result;
@@ -784,8 +781,6 @@ class _HomePageState extends State<HomePage> {
       },
     );
   }
-
-  // ---------- Layouts -------------------------------------------------------
 
   Widget _editorAndPdfTabs() {
     return DefaultTabController(
@@ -859,8 +854,6 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  // ---------- Build ---------------------------------------------------------
-
   String _windowTitle() {
     final buf = StringBuffer('LaTeX Studio');
     if (_projectRoot != null) {
@@ -900,6 +893,29 @@ class _HomePageState extends State<HomePage> {
             appBar: AppBar(
               title: Text(_windowTitle(), overflow: TextOverflow.ellipsis),
               actions: [
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  child: DropdownButton<String>(
+                    value: _engineId,
+                    underline: const SizedBox.shrink(),
+                    onChanged: _busy
+                        ? null
+                        : (v) {
+                            if (v != null) setState(() => _engineId = v);
+                          },
+                    items: _engines
+                        .map((e) => DropdownMenuItem<String>(
+                              value: e['id'] as String,
+                              enabled: e['available'] == true,
+                              child: Text(
+                                e['available'] == true
+                                    ? (e['display_name'] as String)
+                                    : '${e['display_name']} (unavailable)',
+                              ),
+                            ))
+                        .toList(),
+                  ),
+                ),
                 if (_busy)
                   const Padding(
                     padding: EdgeInsets.symmetric(horizontal: 16),
@@ -989,7 +1005,6 @@ class _HomePageState extends State<HomePage> {
 class _SaveIntent extends Intent {
   const _SaveIntent();
 }
-
 
 class _TemplateDialog extends StatefulWidget {
   final List<Map<String, String>> templates;

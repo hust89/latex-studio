@@ -1,15 +1,12 @@
-//! Exercises the exported C ABI from Rust. Using the crate's public Rust
-//! name paths (rather than an `extern "C"` block) forces cargo to link the
-//! crate's rlib into this test binary. This is the layer Flutter will
-//! consume; if this test passes, any remaining FFI problems are packaging
-//! or Dart, not the ABI itself.
+//! Exercises the exported C ABI directly from Rust.
 
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
 
 use latex_ffi::{latex_compile, latex_free_string};
 
-/// SAFETY: caller must pass a pointer returned by latex_compile.
+fn c(s: &str) -> CString { CString::new(s).unwrap() }
+
 unsafe fn take_and_free(p: *mut c_char) -> String {
     assert!(!p.is_null(), "latex_compile returned NULL");
     let s = CStr::from_ptr(p).to_string_lossy().into_owned();
@@ -46,6 +43,7 @@ fn null_pointers_return_error_not_crash() {
             std::ptr::null(),
             std::ptr::null(),
             std::ptr::null(),
+            std::ptr::null(),
         ))
     };
     assert_eq!(json_error_of(&s).as_deref(), Some("null pointer argument"));
@@ -53,19 +51,20 @@ fn null_pointers_return_error_not_crash() {
 
 #[test]
 fn empty_strings_return_error() {
-    let empty = CString::new("").unwrap();
-    let (e, r, o) = (empty.as_ptr(), empty.as_ptr(), empty.as_ptr());
-    let s = unsafe { take_and_free(latex_compile(e, r, o)) };
+    let empty = c("");
+    let (e, r, o, g) = (empty.as_ptr(), empty.as_ptr(), empty.as_ptr(), empty.as_ptr());
+    let s = unsafe { take_and_free(latex_compile(g, e, r, o)) };
     assert_eq!(json_error_of(&s).as_deref(), Some("empty string argument"));
 }
 
 #[test]
 fn missing_entry_file_reports_error() {
     let dir = tempfile::tempdir().unwrap();
-    let e = CString::new(dir.path().join("nope.tex").to_str().unwrap()).unwrap();
-    let r = CString::new(dir.path().to_str().unwrap()).unwrap();
-    let o = CString::new(dir.path().join("out").to_str().unwrap()).unwrap();
-    let s = unsafe { take_and_free(latex_compile(e.as_ptr(), r.as_ptr(), o.as_ptr())) };
+    let engine = c("tectonic");
+    let e = c(dir.path().join("nope.tex").to_str().unwrap());
+    let r = c(dir.path().to_str().unwrap());
+    let o = c(dir.path().join("out").to_str().unwrap());
+    let s = unsafe { take_and_free(latex_compile(engine.as_ptr(), e.as_ptr(), r.as_ptr(), o.as_ptr())) };
     assert!(
         json_error_of(&s).unwrap_or_default().contains("entry is not a file"),
         "unexpected: {s}"
@@ -77,10 +76,11 @@ fn entry_outside_project_root_rejected() {
     let a = tempfile::tempdir().unwrap();
     let b = tempfile::tempdir().unwrap();
     std::fs::write(a.path().join("main.tex"), "\\documentclass{article}").unwrap();
-    let e = CString::new(a.path().join("main.tex").to_str().unwrap()).unwrap();
-    let r = CString::new(b.path().to_str().unwrap()).unwrap();
-    let o = CString::new(b.path().join("out").to_str().unwrap()).unwrap();
-    let s = unsafe { take_and_free(latex_compile(e.as_ptr(), r.as_ptr(), o.as_ptr())) };
+    let engine = c("tectonic");
+    let e = c(a.path().join("main.tex").to_str().unwrap());
+    let r = c(b.path().to_str().unwrap());
+    let o = c(b.path().join("out").to_str().unwrap());
+    let s = unsafe { take_and_free(latex_compile(engine.as_ptr(), e.as_ptr(), r.as_ptr(), o.as_ptr())) };
     assert!(
         json_error_of(&s).unwrap_or_default().contains("entry is not inside"),
         "unexpected: {s}"
@@ -95,13 +95,14 @@ fn real_compile_returns_valid_build_result_json() {
         dir.path().join("main.tex"),
         "\\documentclass{article}\\begin{document}ok\\end{document}",
     ).unwrap();
-    let e = CString::new(dir.path().join("main.tex").to_str().unwrap()).unwrap();
-    let r = CString::new(dir.path().to_str().unwrap()).unwrap();
-    let o = CString::new(dir.path().join("out").to_str().unwrap()).unwrap();
+    let engine = c("tectonic");
+    let e = c(dir.path().join("main.tex").to_str().unwrap());
+    let r = c(dir.path().to_str().unwrap());
+    let o = c(dir.path().join("out").to_str().unwrap());
 
     std::env::set_var("LATEX_TECTONIC_NETWORK", "offline");
 
-    let s = unsafe { take_and_free(latex_compile(e.as_ptr(), r.as_ptr(), o.as_ptr())) };
+    let s = unsafe { take_and_free(latex_compile(engine.as_ptr(), e.as_ptr(), r.as_ptr(), o.as_ptr())) };
     let v: serde_json::Value = serde_json::from_str(&s)
         .unwrap_or_else(|e| panic!("invalid JSON from FFI: {e}\nraw: {s}"));
 

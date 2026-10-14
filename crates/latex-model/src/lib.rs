@@ -1,5 +1,8 @@
 use serde::{Deserialize, Serialize};
 
+pub mod engine;
+pub use engine::{Engine, EngineInfo, EngineRequest};
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct SourceLocation {
     pub file: String,
@@ -37,7 +40,6 @@ pub struct Diagnostic {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BuildResult {
     pub success: bool,
-    /// Identifier for this build, unique per invocation.
     pub build_id: String,
     pub exit_code: Option<i32>,
     pub pdf_path: Option<String>,

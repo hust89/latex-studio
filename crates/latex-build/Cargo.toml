@@ -7,6 +7,7 @@ edition = "2021"
 anyhow = "1"
 latex-model = { path = "../latex-model" }
 latex-engine-tectonic = { path = "../latex-engine-tectonic" }
+latex-engine-system = { path = "../latex-engine-system" }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["rt", "rt-multi-thread", "macros"] }

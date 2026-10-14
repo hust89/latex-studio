@@ -3,33 +3,74 @@ use std::os::raw::c_char;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::{Path, PathBuf};
 
-use latex_build::{BuildRequest, Builder};
-use latex_engine_tectonic::TectonicEngine;
+// ---------- helpers ---------------------------------------------------------
 
-/// Compile `entry` with the project rooted at `project_root`, writing
-/// artefacts under `out_parent/<build_id>/`.
-///
-/// Returns a heap-allocated, NUL-terminated JSON string. On success the JSON
-/// matches `latex_model::BuildResult`; on any failure it is
-/// `{"error":"..."}`. The caller must free the string with
-/// `latex_free_string`.
+fn json_error(msg: &str) -> String {
+    serde_json::json!({ "error": msg }).to_string()
+}
+
+fn cstring_or_error(json: String) -> *mut c_char {
+    let c = CString::new(json)
+        .unwrap_or_else(|_| CString::new("{\"error\":\"nul byte in result\"}").unwrap());
+    c.into_raw()
+}
+
+fn path_from_args(
+    project_root: *const c_char,
+    rel_path: *const c_char,
+) -> Result<(PathBuf, PathBuf), String> {
+    if project_root.is_null() || rel_path.is_null() {
+        return Err("null pointer argument".into());
+    }
+    let root = unsafe { CStr::from_ptr(project_root) }
+        .to_string_lossy()
+        .into_owned();
+    let rel = unsafe { CStr::from_ptr(rel_path) }
+        .to_string_lossy()
+        .into_owned();
+    if root.is_empty() || rel.is_empty() {
+        return Err("empty string argument".into());
+    }
+    let root_path = PathBuf::from(&root);
+    if !root_path.is_dir() {
+        return Err(format!("project_root is not a directory: {root}"));
+    }
+    let rel_path = PathBuf::from(&rel);
+    if rel_path.is_absolute() {
+        return Err("rel_path must be relative".into());
+    }
+    Ok((root_path, rel_path))
+}
+
+// ---------- compile ---------------------------------------------------------
+
 #[no_mangle]
 pub extern "C" fn latex_compile(
+    engine_name: *const c_char,
     entry: *const c_char,
     project_root: *const c_char,
     out_parent: *const c_char,
 ) -> *mut c_char {
     let payload = catch_unwind(AssertUnwindSafe(|| {
-        // SAFETY: caller must supply valid NUL-terminated pointers; we check
-        // for null before dereferencing.
-        if entry.is_null() || project_root.is_null() || out_parent.is_null() {
+        if engine_name.is_null() || entry.is_null()
+            || project_root.is_null() || out_parent.is_null()
+        {
             return json_error("null pointer argument");
         }
+        let engine_s = unsafe { CStr::from_ptr(engine_name) }
+            .to_string_lossy()
+            .into_owned();
         let entry = unsafe { CStr::from_ptr(entry) }.to_string_lossy().into_owned();
-        let project_root = unsafe { CStr::from_ptr(project_root) }.to_string_lossy().into_owned();
-        let out_parent = unsafe { CStr::from_ptr(out_parent) }.to_string_lossy().into_owned();
+        let project_root = unsafe { CStr::from_ptr(project_root) }
+            .to_string_lossy()
+            .into_owned();
+        let out_parent = unsafe { CStr::from_ptr(out_parent) }
+            .to_string_lossy()
+            .into_owned();
 
-        if entry.is_empty() || project_root.is_empty() || out_parent.is_empty() {
+        if engine_s.is_empty() || entry.is_empty()
+            || project_root.is_empty() || out_parent.is_empty()
+        {
             return json_error("empty string argument");
         }
 
@@ -41,12 +82,10 @@ pub extern "C" fn latex_compile(
         if !root_path.is_dir() {
             return json_error(&format!("project_root is not a directory: {project_root}"));
         }
-        // Canonicalize so the engine receives stable absolute paths.
         let (entry_c, root_c) = match (entry_path.canonicalize(), root_path.canonicalize()) {
             (Ok(a), Ok(b)) => (a, b),
             (Err(e), _) | (_, Err(e)) => return json_error(&format!("canonicalize: {e}")),
         };
-        // Entry must live under the project root.
         if !entry_c.starts_with(&root_c) {
             return json_error("entry is not inside project_root");
         }
@@ -61,8 +100,9 @@ pub extern "C" fn latex_compile(
         };
 
         rt.block_on(async {
-            let builder = Builder::new(TectonicEngine::default());
-            let req = BuildRequest {
+            let builder = latex_build::Builder;
+            let req = latex_build::BuildRequest {
+                engine_id: engine_s,
                 entry: entry_c,
                 project_root: root_c,
                 out_parent: out_path,
@@ -76,21 +116,30 @@ pub extern "C" fn latex_compile(
     }))
     .unwrap_or_else(|_| json_error("panic in latex_compile"));
 
-    // A CString cannot contain NUL; our payload is JSON, guaranteed NUL-free.
-    let c = CString::new(payload)
-        .unwrap_or_else(|_| CString::new("{\"error\":\"nul byte in result\"}").unwrap());
-    c.into_raw()
+    cstring_or_error(payload)
+}
+
+/// List available engines:
+/// `{"engines":[{"id":"tectonic","display_name":"Tectonic","available":true,"notes":null}, ...],
+///   "default":"tectonic"}`
+#[no_mangle]
+pub extern "C" fn latex_engines_list() -> *mut c_char {
+    let payload = catch_unwind(AssertUnwindSafe(|| {
+        let engines = latex_build::list_engines();
+        serde_json::json!({
+            "engines": engines,
+            "default": latex_build::default_engine_id(),
+        })
+        .to_string()
+    }))
+    .unwrap_or_else(|_| json_error("panic in latex_engines_list"));
+    cstring_or_error(payload)
 }
 
 #[no_mangle]
 pub extern "C" fn latex_free_string(p: *mut c_char) {
     if p.is_null() { return; }
-    // SAFETY: pointer produced by CString::into_raw above.
     unsafe { drop(CString::from_raw(p)); }
-}
-
-fn json_error(msg: &str) -> String {
-    serde_json::json!({ "error": msg }).to_string()
 }
 
 // ---------- project model ---------------------------------------------------
@@ -107,21 +156,6 @@ struct FileJson {
     kind: &'static str,
 }
 
-/// Scan a project root and return its file index as JSON:
-///
-/// ```json
-/// {
-///   "files": [
-///     {"path": "main.tex", "kind": "Source"},
-///     {"path": "refs.bib", "kind": "Bibliography"},
-///     {"path": "figures/plot.pdf", "kind": "Asset"}
-///   ],
-///   "entry": "main.tex"
-/// }
-/// ```
-///
-/// Errors are returned as `{"error": "..."}`. Caller frees with
-/// `latex_free_string`.
 #[no_mangle]
 pub extern "C" fn latex_project_index(project_root: *const c_char) -> *mut c_char {
     let payload = catch_unwind(AssertUnwindSafe(|| {
@@ -163,9 +197,7 @@ pub extern "C" fn latex_project_index(project_root: *const c_char) -> *mut c_cha
     }))
     .unwrap_or_else(|_| json_error("panic in latex_project_index"));
 
-    let c = CString::new(payload)
-        .unwrap_or_else(|_| CString::new("{\"error\":\"nul byte in result\"}").unwrap());
-    c.into_raw()
+    cstring_or_error(payload)
 }
 
 fn kind_name(k: latex_project::FileKind) -> &'static str {
@@ -181,41 +213,6 @@ fn kind_name(k: latex_project::FileKind) -> &'static str {
 
 // ---------- atomic save and autosave ---------------------------------------
 
-fn path_from_args(
-    project_root: *const c_char,
-    rel_path: *const c_char,
-) -> Result<(std::path::PathBuf, std::path::PathBuf), String> {
-    if project_root.is_null() || rel_path.is_null() {
-        return Err("null pointer argument".into());
-    }
-    let root = unsafe { CStr::from_ptr(project_root) }
-        .to_string_lossy()
-        .into_owned();
-    let rel = unsafe { CStr::from_ptr(rel_path) }
-        .to_string_lossy()
-        .into_owned();
-    if root.is_empty() || rel.is_empty() {
-        return Err("empty string argument".into());
-    }
-    let root_path = PathBuf::from(&root);
-    if !root_path.is_dir() {
-        return Err(format!("project_root is not a directory: {root}"));
-    }
-    let rel_path = PathBuf::from(&rel);
-    if rel_path.is_absolute() {
-        return Err("rel_path must be relative".into());
-    }
-    Ok((root_path, rel_path))
-}
-
-fn cstring_or_error(json: String) -> *mut c_char {
-    let c = CString::new(json)
-        .unwrap_or_else(|_| CString::new("{\"error\":\"nul byte in result\"}").unwrap());
-    c.into_raw()
-}
-
-/// Atomic write of `content` to `<project_root>/<rel_path>`, then clear the
-/// autosave for that file. Returns `{"ok":true}` or `{"error":"..."}`.
 #[no_mangle]
 pub extern "C" fn latex_save_atomic(
     project_root: *const c_char,
@@ -238,7 +235,6 @@ pub extern "C" fn latex_save_atomic(
         if let Err(e) = latex_project::atomic_write(&target, &body) {
             return json_error(&format!("{e:#}"));
         }
-        // Best-effort autosave cleanup; a failure here does not fail the save.
         let _ = latex_project::autosave_clear(&root, &rel);
         r#"{"ok":true}"#.to_string()
     }))
@@ -246,7 +242,6 @@ pub extern "C" fn latex_save_atomic(
     cstring_or_error(payload)
 }
 
-/// Write an autosave. Returns `{"ok":true}` or `{"error":"..."}`.
 #[no_mangle]
 pub extern "C" fn latex_autosave_write(
     project_root: *const c_char,
@@ -273,8 +268,6 @@ pub extern "C" fn latex_autosave_write(
     cstring_or_error(payload)
 }
 
-/// List recoverable autosaves:
-/// `{"recoverable":[{"path":"main.tex","autosave_mtime_ms":..,"original_mtime_ms":..}]}`
 #[no_mangle]
 pub extern "C" fn latex_autosave_list(project_root: *const c_char) -> *mut c_char {
     let payload = catch_unwind(AssertUnwindSafe(|| {
@@ -300,7 +293,6 @@ pub extern "C" fn latex_autosave_list(project_root: *const c_char) -> *mut c_cha
     cstring_or_error(payload)
 }
 
-/// Read an autosave's content: `{"content":"..."}` or `{"error":"..."}`.
 #[no_mangle]
 pub extern "C" fn latex_autosave_read(
     project_root: *const c_char,
@@ -320,7 +312,6 @@ pub extern "C" fn latex_autosave_read(
     cstring_or_error(payload)
 }
 
-/// Delete an autosave. Returns `{"ok":true}`.
 #[no_mangle]
 pub extern "C" fn latex_autosave_clear(
     project_root: *const c_char,
@@ -342,8 +333,6 @@ pub extern "C" fn latex_autosave_clear(
 
 // ---------- templates ------------------------------------------------------
 
-/// List built-in templates:
-/// `{"templates":[{"name":"article","description":"..."}, ...]}`
 #[no_mangle]
 pub extern "C" fn latex_templates_list() -> *mut c_char {
     let payload = catch_unwind(AssertUnwindSafe(|| {
@@ -362,8 +351,6 @@ pub extern "C" fn latex_templates_list() -> *mut c_char {
     cstring_or_error(payload)
 }
 
-/// Create a template under `target_dir`. The target must be empty or absent.
-/// Returns `{"ok":true,"path":"..."}` or `{"error":"..."}`.
 #[no_mangle]
 pub extern "C" fn latex_template_create(
     name: *const c_char,
@@ -388,9 +375,6 @@ pub extern "C" fn latex_template_create(
             None => return json_error(&format!("unknown template: {name_s}")),
         };
         let target = PathBuf::from(&target_s);
-        if target.is_absolute() {
-            // Absolute target is fine — user chooses where.
-        }
         match latex_project::create_template(template, &target) {
             Ok(()) => serde_json::json!({
                 "ok": true,
