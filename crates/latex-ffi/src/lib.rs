@@ -339,3 +339,67 @@ pub extern "C" fn latex_autosave_clear(
     .unwrap_or_else(|_| json_error("panic in latex_autosave_clear"));
     cstring_or_error(payload)
 }
+
+// ---------- templates ------------------------------------------------------
+
+/// List built-in templates:
+/// `{"templates":[{"name":"article","description":"..."}, ...]}`
+#[no_mangle]
+pub extern "C" fn latex_templates_list() -> *mut c_char {
+    let payload = catch_unwind(AssertUnwindSafe(|| {
+        let items: Vec<serde_json::Value> = latex_project::TEMPLATES
+            .iter()
+            .map(|t| {
+                serde_json::json!({
+                    "name": t.name,
+                    "description": t.description,
+                })
+            })
+            .collect();
+        serde_json::json!({ "templates": items }).to_string()
+    }))
+    .unwrap_or_else(|_| json_error("panic in latex_templates_list"));
+    cstring_or_error(payload)
+}
+
+/// Create a template under `target_dir`. The target must be empty or absent.
+/// Returns `{"ok":true,"path":"..."}` or `{"error":"..."}`.
+#[no_mangle]
+pub extern "C" fn latex_template_create(
+    name: *const c_char,
+    target_dir: *const c_char,
+) -> *mut c_char {
+    let payload = catch_unwind(AssertUnwindSafe(|| {
+        if name.is_null() || target_dir.is_null() {
+            return json_error("null pointer argument");
+        }
+        let name_s = unsafe { CStr::from_ptr(name) }
+            .to_string_lossy()
+            .into_owned();
+        let target_s = unsafe { CStr::from_ptr(target_dir) }
+            .to_string_lossy()
+            .into_owned();
+        if name_s.is_empty() || target_s.is_empty() {
+            return json_error("empty string argument");
+        }
+
+        let template = match latex_project::find_template(&name_s) {
+            Some(t) => t,
+            None => return json_error(&format!("unknown template: {name_s}")),
+        };
+        let target = PathBuf::from(&target_s);
+        if target.is_absolute() {
+            // Absolute target is fine — user chooses where.
+        }
+        match latex_project::create_template(template, &target) {
+            Ok(()) => serde_json::json!({
+                "ok": true,
+                "path": target.to_string_lossy(),
+            })
+            .to_string(),
+            Err(e) => json_error(&format!("{e:#}")),
+        }
+    }))
+    .unwrap_or_else(|_| json_error("panic in latex_template_create"));
+    cstring_or_error(payload)
+}

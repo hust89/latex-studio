@@ -5,9 +5,11 @@
 
 mod graph;
 mod save;
+mod templates;
 mod scan;
 
 pub use graph::{IncludeEdge, IncludeGraph, UnresolvedInclude};
+pub use templates::{create as create_template, find as find_template, Template, TEMPLATES};
 pub use save::{atomic_write, autosave_clear, autosave_list, autosave_read, autosave_write, Recoverable};
 pub use scan::{FileEntry, FileIndex, FileKind};
 

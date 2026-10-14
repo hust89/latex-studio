@@ -54,3 +54,20 @@ Not delivered:
 - No automated Flutter tests.
 
 ## M2.4 — templates (not started)
+
+## Open issue: build latency
+
+Noticed during M2.4 smoke test: compile takes noticeably longer than
+expected. Likely causes to investigate in M3:
+
+1. Tectonic may be re-downloading or re-checking something per run even
+   with a primed cache. Confirm with `time tectonic --only-cached main.tex`
+   on the same project from a shell.
+2. Flutter debug builds are slower than release. Confirm with
+   `flutter run --release -d linux`.
+3. First build of a new template always pays the initial format/font
+   cost. Second build should be far faster. Measure both.
+4. `NetworkPolicy::Auto` may be retrying the offline path, failing, then
+   retrying online. Check the Rust logs during a compile.
+
+M3 will add a "measure and report" step before any optimisation.

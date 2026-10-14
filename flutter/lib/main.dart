@@ -25,6 +25,11 @@ typedef _ListC = Pointer<Utf8> Function(Pointer<Utf8>);
 typedef _ListDart = Pointer<Utf8> Function(Pointer<Utf8>);
 typedef _ReadC = Pointer<Utf8> Function(Pointer<Utf8>, Pointer<Utf8>);
 typedef _ReadDart = Pointer<Utf8> Function(Pointer<Utf8>, Pointer<Utf8>);
+typedef _TplListC = Pointer<Utf8> Function();
+typedef _TplListDart = Pointer<Utf8> Function();
+typedef _TplCreateC = Pointer<Utf8> Function(Pointer<Utf8>, Pointer<Utf8>);
+typedef _TplCreateDart = Pointer<Utf8> Function(Pointer<Utf8>, Pointer<Utf8>);
+// latextemplates_list_marker
 typedef _FreeC = Void Function(Pointer<Utf8>);
 typedef _FreeDart = void Function(Pointer<Utf8>);
 
@@ -37,6 +42,8 @@ class LatexNative {
   late final _ListDart _autosaveList;
   late final _ReadDart _autosaveRead;
   late final _ReadDart _autosaveClear;
+  late final _TplListDart _tplList;
+  late final _TplCreateDart _tplCreate;
   late final _FreeDart _free;
 
   LatexNative._(this._lib) {
@@ -50,6 +57,10 @@ class LatexNative {
     _autosaveRead = _lib.lookupFunction<_ReadC, _ReadDart>('latex_autosave_read');
     _autosaveClear =
         _lib.lookupFunction<_ReadC, _ReadDart>('latex_autosave_clear');
+    _tplList =
+        _lib.lookupFunction<_TplListC, _TplListDart>('latex_templates_list');
+    _tplCreate = _lib
+        .lookupFunction<_TplCreateC, _TplCreateDart>('latex_template_create');
     _free = _lib.lookupFunction<_FreeC, _FreeDart>('latex_free_string');
   }
 
@@ -131,6 +142,22 @@ class LatexNative {
 
   Map<String, dynamic> autosaveClear(String root, String rel) =>
       _two(root, rel, _autosaveClear);
+
+  Map<String, dynamic> templatesList() {
+    final raw = _tplList();
+    return _decodeAndFree(raw);
+  }
+
+  Map<String, dynamic> templateCreate(String name, String targetDir) {
+    final n = name.toNativeUtf8();
+    final t = targetDir.toNativeUtf8();
+    try {
+      return _decodeAndFree(_tplCreate(n, t));
+    } finally {
+      malloc.free(n);
+      malloc.free(t);
+    }
+  }
 
   Map<String, dynamic> autosaveList(String root) {
     final r = root.toNativeUtf8();
@@ -328,6 +355,48 @@ class _HomePageState extends State<HomePage> {
     if (entry != null) {
       await _openProjectFile(entry);
     }
+  }
+
+  // ---------- New from template ---------------------------------------------
+
+  Future<void> _newFromTemplate() async {
+    final native = _native;
+    if (native == null) return;
+
+    List<Map<String, String>> templates;
+    try {
+      final res = native.templatesList();
+      final raw = (res['templates'] as List?) ?? const [];
+      templates = raw
+          .map((t) => {
+                'name': (t as Map)['name'].toString(),
+                'description': t['description'].toString(),
+              })
+          .toList();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('templates: $e')));
+      return;
+    }
+    if (templates.isEmpty || !mounted) return;
+
+    final result = await showDialog<Map<String, String>>(
+      context: context,
+      builder: (ctx) => _TemplateDialog(templates: templates),
+    );
+    if (result == null || !mounted) return;
+
+    final created = native.templateCreate(result['template']!, result['path']!);
+    if (created['error'] != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Create failed: ${created['error']}')),
+      );
+      return;
+    }
+
+    final root = created['path'] as String? ?? result['path']!;
+    await _loadRoot(root);
   }
 
   // ---------- Recovery -------------------------------------------------------
@@ -843,6 +912,11 @@ class _HomePageState extends State<HomePage> {
                     ),
                   ),
                 IconButton(
+                  onPressed: _busy ? null : _newFromTemplate,
+                  icon: const Icon(Icons.note_add_outlined),
+                  tooltip: 'New from template',
+                ),
+                IconButton(
                   onPressed: _busy ? null : _pickProject,
                   icon: const Icon(Icons.folder_open),
                   tooltip: 'Open project',
@@ -914,4 +988,91 @@ class _HomePageState extends State<HomePage> {
 
 class _SaveIntent extends Intent {
   const _SaveIntent();
+}
+
+
+class _TemplateDialog extends StatefulWidget {
+  final List<Map<String, String>> templates;
+  const _TemplateDialog({required this.templates});
+
+  @override
+  State<_TemplateDialog> createState() => _TemplateDialogState();
+}
+
+class _TemplateDialogState extends State<_TemplateDialog> {
+  late String _chosen = widget.templates.first['name']!;
+  final TextEditingController _path = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    final home = Platform.environment['HOME'] ?? '';
+    _path.text = home.isEmpty ? '' : '$home/newproject';
+  }
+
+  @override
+  void dispose() {
+    _path.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('New from template'),
+      content: SizedBox(
+        width: 480,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Template'),
+            const SizedBox(height: 4),
+            DropdownButtonFormField<String>(
+              initialValue: _chosen,
+              items: widget.templates
+                  .map((t) => DropdownMenuItem<String>(
+                        value: t['name'],
+                        child: Text('${t['name']}  -  ${t['description']}'),
+                      ))
+                  .toList(),
+              onChanged: (v) {
+                if (v != null) setState(() => _chosen = v);
+              },
+            ),
+            const SizedBox(height: 16),
+            const Text('Target directory'),
+            const SizedBox(height: 4),
+            TextField(
+              controller: _path,
+              decoration: const InputDecoration(
+                hintText: '/home/you/newproject',
+                border: OutlineInputBorder(),
+                isDense: true,
+              ),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'The directory must not exist or must be empty.',
+              style: TextStyle(fontSize: 11),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: () {
+            final p = _path.text.trim();
+            if (p.isEmpty) return;
+            Navigator.of(context).pop({'template': _chosen, 'path': p});
+          },
+          child: const Text('Create'),
+        ),
+      ],
+    );
+  }
 }
