@@ -495,9 +495,12 @@ name = "latex-ffi"
 version = "0.1.0"
 dependencies = [
  "latex-build",
+ "latex-correct",
  "latex-engine-tectonic",
+ "latex-model",
  "latex-project",
  "latex-publish",
+ "latex-verify",
  "serde",
  "serde_json",
  "tempfile",

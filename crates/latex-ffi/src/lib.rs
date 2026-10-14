@@ -15,6 +15,7 @@ mod compile;
 mod engines;
 mod project;
 mod publish;
+mod verify;
 
 pub use compile::latex_compile;
 pub use engines::latex_engines_list;
@@ -23,6 +24,7 @@ pub use project::{
     latex_project_index, latex_save_atomic, latex_template_create, latex_templates_list,
 };
 pub use publish::latex_publish_archive;
+pub use verify::{latex_correct_apply, latex_correct_propose, latex_verify_project};
 
 // ---------- helpers shared across submodules --------------------------------
 
@@ -51,9 +53,6 @@ pub(crate) fn read_cstr(p: *const c_char) -> Option<String> {
 }
 
 /// Validate a project-root / relative-path pair.
-///
-/// Both arguments are non-empty Rust strings. `rel_path` must be relative.
-/// `project_root` must exist and be a directory.
 pub(crate) fn path_from_args(
     project_root: &str,
     rel_path: &str,
