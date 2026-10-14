@@ -93,3 +93,11 @@ Tectonic 0.17 detects .bib dependencies and runs BibTeX as needed. The
 provided by the engine, not something the product must orchestrate.
 Milestone 3 work reduces to: surface the engine choice, expose the .bib
 files in the project model, and report the BibTeX/rerun phases in the UI.
+
+## Build latency — conclusion (2026-10-14)
+
+Release-mode Flutter: fast. Debug-mode Flutter: slow.
+The engine (Tectonic) was never the bottleneck.
+
+Action for M3: use `flutter run --release` for any timing observation.
+Debug builds remain the default for development.
