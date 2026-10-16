@@ -3,6 +3,7 @@
 /// These are not the source of truth — the Rust types are — but parsing
 /// into typed objects makes the UI code much simpler than poking at
 /// `Map<String, dynamic>` everywhere.
+library;
 
 // ---------- project ----------------------------------------------------------
 
