@@ -57,7 +57,6 @@ class _HomePageState extends State<HomePage> {
   ProjectIndex? _projectIndex;
   String? _entry;
   String? _openFile;
-  String? _openFileAbs;
   CodeController? _editor;
   bool _dirty = false;
   Map<String, dynamic>? _result;
@@ -105,7 +104,16 @@ class _HomePageState extends State<HomePage> {
   // ---------- project loading ------------------------------------------------
 
   Future<void> _pickProject() async {
-    final dir = await FilePicker.platform.getDirectoryPath();
+    String? dir;
+    try {
+      dir = await FilePicker.platform.getDirectoryPath();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('folder picker failed: $e')),
+      );
+      return;
+    }
     if (dir == null) return;
     await _loadRoot(dir);
   }
@@ -120,12 +128,10 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<void> _loadRoot(String root) async {
-    if (!Directory(root).existsSync()) {
-      setState(() =>
-          _result = <String, dynamic>{'error': 'not a directory: $root'});
-      return;
-    }
-
+    // No Dart-side pre-check. Directory.existsSync() throws
+    // FileSystemException on scoped-storage paths, even for the app's
+    // own directory; the FFI index call already handles path errors
+    // and reports them via idx['error'].
     setState(() => _busy = true);
 
     Map<String, dynamic> idx;
@@ -169,7 +175,6 @@ class _HomePageState extends State<HomePage> {
       _result = null;
       _pathController.text = root;
       _openFile = null;
-      _openFileAbs = null;
       _dirty = false;
     });
 
@@ -321,17 +326,22 @@ class _HomePageState extends State<HomePage> {
     }
 
     final abs = '$root/$rel';
-    final f = File(abs);
-    if (!f.existsSync()) return;
-
-    final content = await f.readAsString();
+    String content;
+    try {
+      content = await File(abs).readAsString();
+    } on FileSystemException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('cannot read $abs: $e')),
+      );
+      return;
+    }
     final controller = CodeController(text: content, language: hl_tex.tex);
     controller.addListener(_onEditorChanged);
 
     _editor?.dispose();
     setState(() {
       _openFile = rel;
-      _openFileAbs = abs;
       _editor = controller;
       _dirty = false;
     });
