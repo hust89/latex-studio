@@ -4,6 +4,7 @@
 /// Every function returns a JSON-decoded `Map<String, dynamic>`; the native
 /// side never panics across the boundary and reports failures as
 /// `{"error": "..."}`.
+library;
 
 import 'dart:convert';
 import 'dart:ffi';
@@ -109,18 +110,50 @@ class LatexNative {
     _free = _lib.lookupFunction<_FreeC, _FreeDart>('latex_free_string');
   }
 
-  static LatexNative open() {
+  static LatexNative open([String? customPath]) {
+    if (customPath != null) {
+      return LatexNative._(DynamicLibrary.open(customPath));
+    }
     final DynamicLibrary lib;
-    if (Platform.isAndroid || Platform.isLinux) {
+    if (Platform.isAndroid) {
       lib = DynamicLibrary.open('liblatex_ffi.so');
+    } else if (Platform.isLinux) {
+      lib = _loadWithFallbacks([
+        'liblatex_ffi.so',
+        '../target/debug/liblatex_ffi.so',
+        '../target/release/liblatex_ffi.so',
+        'target/debug/liblatex_ffi.so',
+        'target/release/liblatex_ffi.so',
+      ]);
     } else if (Platform.isMacOS) {
-      lib = DynamicLibrary.open('liblatex_ffi.dylib');
+      lib = _loadWithFallbacks([
+        'liblatex_ffi.dylib',
+        '../target/debug/liblatex_ffi.dylib',
+        '../target/release/liblatex_ffi.dylib',
+      ]);
     } else if (Platform.isWindows) {
-      lib = DynamicLibrary.open('latex_ffi.dll');
+      lib = _loadWithFallbacks([
+        'latex_ffi.dll',
+        r'..\target\debug\latex_ffi.dll',
+        r'..\target\release\latex_ffi.dll',
+      ]);
     } else {
-      throw UnsupportedError('Unsupported platform');
+      throw UnsupportedError('Unsupported platform: ${Platform.operatingSystem}');
     }
     return LatexNative._(lib);
+  }
+
+  static DynamicLibrary _loadWithFallbacks(List<String> candidates) {
+    Object? lastError;
+    for (final candidate in candidates) {
+      try {
+        return DynamicLibrary.open(candidate);
+      } catch (e) {
+        lastError = e;
+      }
+    }
+    throw ArgumentError(
+        'Failed to load native library from candidates: $candidates. Last error: $lastError');
   }
 
   // ---------- internals ------------------------------------------------------
