@@ -213,6 +213,12 @@ const BUILTIN_COMMANDS: &[&str] = &[
     "document",
 ];
 
+/// The names on the builtin allowlist. Exposed so callers that want to
+/// suggest corrections can check whether a name is close to a builtin.
+pub fn builtin_command_names() -> &'static [&'static str] {
+    BUILTIN_COMMANDS
+}
+
 fn builtin_set() -> &'static HashSet<&'static str> {
     static SET: OnceLock<HashSet<&'static str>> = OnceLock::new();
     SET.get_or_init(|| BUILTIN_COMMANDS.iter().copied().collect())
