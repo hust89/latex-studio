@@ -11,6 +11,7 @@ use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
 use std::path::PathBuf;
 
+mod cache;
 mod compile;
 mod engines;
 mod formal;
@@ -18,6 +19,7 @@ mod project;
 mod publish;
 mod verify;
 
+pub use cache::latex_set_cache_dir;
 pub use compile::latex_compile;
 pub use engines::latex_engines_list;
 pub use formal::{latex_formal_available, latex_formal_check};

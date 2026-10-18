@@ -8,6 +8,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_code_editor/flutter_code_editor.dart';
 import 'package:flutter_highlight/themes/atom-one-dark.dart';
 import 'package:highlight/languages/tex.dart' as hl_tex;
+import 'package:path_provider/path_provider.dart';
 import 'package:pdfrx/pdfrx.dart';
 
 import 'correction_card.dart';
@@ -17,7 +18,28 @@ import 'native.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   pdfrxFlutterInitialize();
+  await _bootstrapCacheDir();
   runApp(const LatexApp());
+}
+
+/// On mobile, point Tectonic's cache at the app's private files directory.
+/// On desktop, leave the platform default (~/.cache/Tectonic) alone so the
+/// CLI-primed bundle is reused.
+Future<void> _bootstrapCacheDir() async {
+  if (!Platform.isAndroid && !Platform.isIOS) return;
+  try {
+    final support = await getApplicationSupportDirectory();
+    final cachePath = '${support.path}/tectonic';
+    final native = LatexNative.open();
+    final r = native.setCacheDir(cachePath);
+    if (r['error'] != null) {
+      // ignore: avoid_print
+      print('cache dir: ${r['error']}');
+    }
+  } catch (e) {
+    // ignore: avoid_print
+    print('cache dir bootstrap failed: $e');
+  }
 }
 
 class LatexApp extends StatelessWidget {

@@ -57,6 +57,8 @@ typedef _CorrectProposeDart = Pointer<Utf8> Function(Pointer<Utf8>, Pointer<Utf8
 typedef _CorrectApplyC = Pointer<Utf8> Function(Pointer<Utf8>, Pointer<Utf8>);
 typedef _CorrectApplyDart = Pointer<Utf8> Function(Pointer<Utf8>, Pointer<Utf8>);
 
+typedef _SetCacheDirC = Pointer<Utf8> Function(Pointer<Utf8>);
+typedef _SetCacheDirDart = Pointer<Utf8> Function(Pointer<Utf8>);
 typedef _FreeC = Void Function(Pointer<Utf8>);
 typedef _FreeDart = void Function(Pointer<Utf8>);
 
@@ -79,6 +81,7 @@ class LatexNative {
   late final _VerifyDart _verifyProject;
   late final _CorrectProposeDart _correctPropose;
   late final _CorrectApplyDart _correctApply;
+  late final _SetCacheDirDart _setCacheDir;
   late final _FreeDart _free;
 
   LatexNative._(this._lib) {
@@ -107,6 +110,8 @@ class LatexNative {
         'latex_correct_propose');
     _correctApply = _lib.lookupFunction<_CorrectApplyC, _CorrectApplyDart>(
         'latex_correct_apply');
+    _setCacheDir =
+        _lib.lookupFunction<_SetCacheDirC, _SetCacheDirDart>('latex_set_cache_dir');
     _free = _lib.lookupFunction<_FreeC, _FreeDart>('latex_free_string');
   }
 
@@ -199,6 +204,15 @@ class LatexNative {
   }
 
   // ---------- public API -----------------------------------------------------
+
+  Map<String, dynamic> setCacheDir(String dir) {
+    final d = dir.toNativeUtf8();
+    try {
+      return _decodeAndFree(_setCacheDir(d));
+    } finally {
+      malloc.free(d);
+    }
+  }
 
   Map<String, dynamic> compile(String engine, String entry, String root, String out) {
     final g = engine.toNativeUtf8();
